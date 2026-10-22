@@ -1,0 +1,97 @@
+# ==========================================
+# 1. 환경 변수 및 보안 관련 (Secrets & Envs)
+# ==========================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# ==========================================
+# 2. Python & 가상환경 (Backend)
+# ==========================================
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Jupyter Notebook & Testing
+.ipynb_checkpoints
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==========================================
+# 3. Node.js & Frontend (React/Next.js/Streamlit)
+# ==========================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+
+# Streamlit Cache
+.streamlit/secrets.toml
+
+# ==========================================
+# 4. OS & IDE 설정 파일 (macOS & Editors)
+# ==========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# VS Code / Cursor
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# PyCharm / IntelliJ
+.idea/
+
+# ==========================================
+# 5. 로컬 데이터베이스 & 벡터 DB & 미디어 파일
+# ==========================================
+# Local DBs & Vector Storage (ChromaDB/SQLite)
+*.sqlite3
+*.db
+chroma_db/
+.chroma/
+
+# Uploaded Resumes, Audio, Logs
+/data/
+/uploads/
+/media/
+/logs/
+*.log
+*.wav
+*.mp3
+*.mp4
+*.pdf
+
+# ==========================================
+# 6. Docker & Temp Files
+# ==========================================
+*.tmp
+*.bak
+*.swp
