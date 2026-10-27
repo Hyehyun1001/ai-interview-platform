@@ -142,6 +142,8 @@ def main() -> None:
     from app.core.database import create_db
 
     _engine, brain.sm = create_db(url)  # 공고별 코딩테스트 여부를 읽는 읽기 전용 연결 (앱의 연결과 별개)
+    app.state.register_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)
+    app.state.code_run_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)
     app.state.login_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)  # E2E 는 같은 계정으로 자주 로그인한다 (운영 한도는 5회/분)
     ids = asyncio.run(seed(url, settings.media_root, demo_admin=True, coding_job=True))
     (root / "ids.json").write_text(json.dumps(ids))

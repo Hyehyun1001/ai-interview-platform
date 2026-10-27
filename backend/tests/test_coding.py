@@ -208,4 +208,52 @@ async def test_report_mixes_code_quality_into_total_with_its_weight(rest):
         assert rep.weights_snapshot["effective_weights"]["code_quality"] == 50.0
         cq = next(x for x in (await s.execute(select(ReportScore).where(ReportScore.report_id == rep.id))).scalars() if x.criterion.value == "code_quality")
         assert "코딩테스트" in cq.comment and "4/4" in cq.comment
-    _ = (app,)
+    # 담당자 상세: 평가 요약(가중치 포함)·session_id 를 돌려준다 — 평가 요약 탭과 제출 코드 탭의 근거
+    async with rest.client() as hr:
+        await rest.login(hr, "hr@corp.local", "recruiter")
+        d = (await hr.get(f"{API}/admin/applications/{app.id}")).json()
+        assert d["session_id"] == str(sess.id) and d["coding_test_enabled"] is False
+        rep = d["report"]
+        assert rep["summary"] and {c["criterion"] for c in rep["criteria"]} >= {"code_quality", "logic"}
+        w = {c["criterion"]: c["weight"] for c in rep["criteria"]}
+        assert w["code_quality"] == 50.0 and w["logic"] == 10.0
+        assert rep["strengths"][0]["evidence"][0]["quote"] and rep["scored_turns"] == 2
+
+
+async def test_run_is_rate_limited_per_user_and_time_limit_is_enforced_by_server(rest):
+    from datetime import timedelta
+
+    from sqlalchemy import update
+
+    from app.core.rate_limit import SlidingWindowLimiter
+    from app.models import InterviewTurn
+    from app.models.base import utcnow
+
+    job, _user, _app, sess = await _coding_session(rest)
+    rest.app.state.code_run_limiter = SlidingWindowLimiter(max_events=3, window_sec=60)
+    async with rest.sm() as s:  # 마지막 메인 질문 답변이 방금 끝났다 → 코딩 시작 직후
+        await s.execute(update(InterviewTurn).where(InterviewTurn.session_id == sess.id).values(answer_ended_at=utcnow()))
+        await s.commit()
+    async with rest.client() as c:
+        await rest.login(c, "a@corp.local")
+        p = (await c.get(f"{API}/sessions/{sess.id}/code/problem")).json()
+        assert 0 <= p["elapsed_sec"] <= 5 and p["time_limit_sec"] == 3600
+        for _ in range(3):
+            assert (await c.post(f"{API}/sessions/{sess.id}/code/run", json={"language": "python", "source": "ok"})).status_code == 200
+        r = await c.post(f"{API}/sessions/{sess.id}/code/run", json={"language": "python", "source": "ok"})
+        assert r.status_code == 429 and r.json()["error"]["code"] == "RATE_LIMITED" and r.headers["retry-after"]
+
+        # 제한시간(3600s)+여유(30s)를 넘기면 실행·제출이 서버에서 거부된다 (클라이언트 타이머를 우회해도 소용없다)
+        rest.app.state.code_run_limiter = SlidingWindowLimiter(max_events=100, window_sec=60)
+        async with rest.sm() as s:
+            await s.execute(update(InterviewTurn).where(InterviewTurn.session_id == sess.id).values(answer_ended_at=utcnow() - timedelta(seconds=3600 + 31)))
+            await s.commit()
+        for path in ("run", "submit"):
+            r = await c.post(f"{API}/sessions/{sess.id}/code/{path}", json={"language": "python", "source": "ok"})
+            assert r.status_code == 409 and r.json()["error"]["code"] == "CODING_TIME_UP", path
+        # 경계: 여유 시간 안이면 허용
+        async with rest.sm() as s:
+            await s.execute(update(InterviewTurn).where(InterviewTurn.session_id == sess.id).values(answer_ended_at=utcnow() - timedelta(seconds=3600 + 10)))
+            await s.commit()
+        assert (await c.post(f"{API}/sessions/{sess.id}/code/submit", json={"language": "python", "source": "ok"})).status_code == 202
+    _ = job

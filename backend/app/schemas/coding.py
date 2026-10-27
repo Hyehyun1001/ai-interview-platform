@@ -35,6 +35,8 @@ class ProblemOut(BaseModel):
     memory_limit_mb: int
     case_count: int
     submitted: bool
+    elapsed_sec: int | None = None  # 서버가 센 코딩테스트 경과 시간(마지막 메인 질문 답변 종료 기준). 클라이언트 타이머의 기준
+
 
 
 class CodeIn(BaseModel):

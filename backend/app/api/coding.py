@@ -15,9 +15,9 @@ from app.coding.judge import MAX_SOURCE_CHARS, CaseResult, SandboxUnavailable, j
 from app.coding.problems import LANGUAGES, STARTERS, Problem, pick_problem
 from app.core.deps import get_current_user, get_db, get_settings_dep, require_role
 from app.core.errors import ApiError
-from app.models import Application, AuditLog, CodeSubmission, InterviewSession, JobPosting, User
+from app.models import Application, AuditLog, CodeSubmission, InterviewSession, InterviewTurn, JobPosting, User
 from app.models.base import utcnow
-from app.models.enums import SessionState, UserRole, Verdict
+from app.models.enums import SessionState, TurnKind, UserRole, Verdict
 from app.schemas.coding import CaseOut, CodeIn, ExampleOut, LanguageOut, ProblemOut, ResultOut, RunOut, SubmitAccepted
 
 router = APIRouter(tags=["coding"])
@@ -48,6 +48,25 @@ def _case_out(c: CaseResult | dict) -> CaseOut:
                    stdout=d.get("stdout", ""), stderr=d.get("stderr", ""), truncated=d.get("truncated", False))
 
 
+TIME_GRACE_SEC = 30  # 클라이언트 자동 제출·네트워크 지연 여유
+
+
+async def _elapsed_sec(db: AsyncSession, session_id: uuid.UUID) -> int | None:
+    """코딩테스트 시작 시각 = 마지막 (코드 꼬리질문이 아닌) 질문의 답변이 끝난 시각. 세션에 별도 컬럼이 없어 턴 기록에서 유도한다."""
+    last = (await db.execute(select(InterviewTurn.answer_ended_at).where(InterviewTurn.session_id == session_id, InterviewTurn.kind != TurnKind.CODE_FOLLOWUP,
+                                                                        InterviewTurn.answer_ended_at.is_not(None)).order_by(InterviewTurn.turn_no.desc()).limit(1))).scalar_one_or_none()
+    if last is None:
+        return None
+    return max(0, int((utcnow() - last).total_seconds()))
+
+
+async def _enforce_time(db: AsyncSession, session_id: uuid.UUID, job: JobPosting) -> None:
+    limit = job.coding_test_time_limit_sec
+    elapsed = await _elapsed_sec(db, session_id) if limit else None
+    if limit and elapsed is not None and elapsed > limit + TIME_GRACE_SEC:
+        raise ApiError(409, "CODING_TIME_UP", "코딩테스트 제한시간이 끝났습니다", {"limit_sec": limit})
+
+
 def _require_coding(sess: InterviewSession) -> None:
     if sess.state != SessionState.CODING:
         raise ApiError(409, "CODING_NOT_AVAILABLE", "모든 질문이 끝나야 코딩테스트를 시작할 수 있습니다", {"state": sess.state.value})
@@ -70,16 +89,20 @@ async def get_problem_for_session(session_id: uuid.UUID, request: Request, user:
                       constraints=p.constraints, examples=[ExampleOut(input=e.stdin, output=e.expected) for e in p.examples],
                       languages=[LanguageOut(id=k, label=v["label"], starter=STARTERS[k]) for k, v in LANGUAGES.items()],  # type: ignore[arg-type]
                       time_limit_sec=job.coding_test_time_limit_sec, exec_time_limit_sec=s.sandbox_time_limit_sec, memory_limit_mb=s.sandbox_memory_mb,
-                      case_count=len(p.cases), submitted=sub is not None)
+                      case_count=len(p.cases), submitted=sub is not None, elapsed_sec=await _elapsed_sec(db, session_id))
 
 
 @router.post("/sessions/{session_id}/code/run", response_model=RunOut)
 async def run_samples(session_id: uuid.UUID, body: CodeIn, request: Request, user: User = Depends(Applicant), db: AsyncSession = Depends(get_db)) -> RunOut:
     sandbox = _sandbox(request)
-    sess, _job, p = await _ctx(db, session_id, user)
+    sess, job, p = await _ctx(db, session_id, user)
     _require_coding(sess)
     if await _existing(db, session_id) is not None:
         raise ApiError(409, "CODE_ALREADY_SUBMITTED", "이미 제출했습니다")
+    await _enforce_time(db, session_id, job)
+    allowed, retry_after = request.app.state.code_run_limiter.hit(str(user.id))
+    if not allowed:
+        raise ApiError(429, "RATE_LIMITED", "실행 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요", {"retry_after_sec": retry_after}, headers={"Retry-After": str(retry_after)})
     if session_id in _busy_runs:
         raise ApiError(429, "RUN_IN_PROGRESS", "이전 실행이 끝나면 다시 실행할 수 있습니다")
     _busy_runs.add(session_id)
@@ -96,8 +119,9 @@ async def run_samples(session_id: uuid.UUID, body: CodeIn, request: Request, use
 @router.post("/sessions/{session_id}/code/submit", response_model=SubmitAccepted, status_code=202)
 async def submit_code(session_id: uuid.UUID, body: CodeIn, request: Request, user: User = Depends(Applicant), db: AsyncSession = Depends(get_db)) -> SubmitAccepted:
     sandbox = _sandbox(request)
-    sess, _job, p = await _ctx(db, session_id, user)
+    sess, job, p = await _ctx(db, session_id, user)
     _require_coding(sess)
+    await _enforce_time(db, session_id, job)
     if await _existing(db, session_id) is not None:  # 제출은 한 번만 — 꼬리질문의 근거가 흔들리지 않게 한다
         raise ApiError(409, "CODE_ALREADY_SUBMITTED", "이미 제출했습니다")
     if len(body.source) > MAX_SOURCE_CHARS:

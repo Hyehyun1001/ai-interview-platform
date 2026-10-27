@@ -214,3 +214,16 @@ async def test_error_format_for_unknown_route_and_method(client):
     assert r.status_code == 404 and r.json()["error"]["code"] == "NOT_FOUND"
     r = await client.get(LOGIN)
     assert r.status_code == 405 and r.json()["error"]["code"] == "METHOD_NOT_ALLOWED"
+
+
+async def test_register_is_rate_limited_per_ip(client, app):
+    from app.core.rate_limit import SlidingWindowLimiter
+    from tests.conftest import API, VALID_REGISTER
+
+    app.state.register_limiter = SlidingWindowLimiter(max_events=2, window_sec=3600)
+    codes = []
+    for i in range(3):
+        r = await client.post(f"{API}/auth/register", json={**VALID_REGISTER, "email": f"rl{i}@corp.local"})
+        codes.append(r.status_code)
+    assert codes == [201, 201, 429]
+    assert r.json()["error"]["code"] == "RATE_LIMITED" and r.headers["retry-after"]

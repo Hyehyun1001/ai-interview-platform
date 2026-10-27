@@ -50,6 +50,7 @@ def main() -> None:
     settings = Settings(_env_file=None, database_url=url, media_root=root / "media", chroma_path=root / "chroma", max_concurrent_sessions=1, report_worker_embedded=True, interview_main_count=3,
                         jwt_secret=os.environ["JWT_SECRET"], data_encryption_key=os.environ["DATA_ENCRYPTION_KEY"])
     app = create_app(settings)  # 기본 엔진: FasterWhisperSTT + LocalSayTTS + ChainBrain(Ollama)
+    app.state.register_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)
     app.state.login_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)
     ids = asyncio.run(seed(url, settings.media_root, demo_admin=True, manual_questions=1))  # 1개만 직접 등록 → 나머지 2개는 이력서 RAG + LLM 이 생성
     (root / "ids.json").write_text(json.dumps(ids))

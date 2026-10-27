@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_db, require_role
 from app.core.errors import ApiError
-from app.models import Application, Company, EvaluationReport, InterviewSession, JobPosting, User
+from app.models import Application, Company, EvaluationReport, InterviewSession, JobPosting, Notification, User
 from app.models.base import utcnow
 from app.models.enums import FinalDecision, JobStatus, UserRole
 from app.schemas.jobs import ApplyRequest, ApplyResponse, JobDetail, JobList, JobSummary, MyApplication, MyJobRef
@@ -85,6 +85,10 @@ async def apply(job_id: uuid.UUID, body: ApplyRequest, user: User = Depends(requ
         await db.rollback()
         existing = (await db.execute(select(Application.id).where(Application.user_id == user.id, Application.job_id == job_id))).scalar_one()
         raise ApiError(409, "ALREADY_APPLIED", "이미 지원한 공고입니다", {"application_id": str(existing)}) from e
+    staff = (await db.execute(select(User.id).where(User.company_id == job.company_id, User.role.in_([UserRole.RECRUITER, UserRole.ADMIN])))).scalars().all()
+    for uid in staff:  # 담당자 알림: 식별자만 담는다(지원자 이름·연락처는 알림 payload 에 넣지 않는다)
+        db.add(Notification(user_id=uid, type="new_application", payload={"application_id": str(app.id), "job_id": str(job.id)}))
+    await db.commit()
     return ApplyResponse(application_id=app.id)
 
 

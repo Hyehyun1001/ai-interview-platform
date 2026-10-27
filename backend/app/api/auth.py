@@ -50,6 +50,9 @@ def _client_ip(request: Request) -> str:
 async def register(body: RegisterRequest, request: Request, response: Response,
                    db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings_dep)) -> AuthResponse:
     """지원자 회원가입. 담당자(recruiter) 계정은 이 경로로 만들 수 없다. 가입 직후 자동 로그인(UI_SPEC §4.1.2)."""
+    allowed, retry_after = request.app.state.register_limiter.hit(_client_ip(request))
+    if not allowed:
+        raise ApiError(429, "RATE_LIMITED", "가입 시도가 너무 많습니다. 잠시 후 다시 시도해주세요", {"retry_after_sec": retry_after}, headers={"Retry-After": str(retry_after)})
     exists = (await db.execute(select(User.id).where(User.email == body.email))).first()
     if exists:
         raise ApiError(409, "EMAIL_ALREADY_EXISTS", "이미 가입된 이메일입니다", {"field": "email"})

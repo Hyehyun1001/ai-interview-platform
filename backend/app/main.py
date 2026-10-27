@@ -62,6 +62,8 @@ def create_app(settings: Settings | None = None, engines: Engines | None = None,
     app.state.settings = settings
     app.state.services = services or build_default_services(settings)
     app.state.login_limiter = SlidingWindowLimiter(max_events=5, window_sec=60)  # 로그인 5회/분 (TRD §8.3)
+    app.state.register_limiter = SlidingWindowLimiter(max_events=10, window_sec=3600)  # 가입 IP 당 10회/시간 (대량 가입 방지)
+    app.state.code_run_limiter = SlidingWindowLimiter(max_events=20, window_sec=60)  # 코드 실행 사용자 당 20회/분 (샌드박스는 동시 1개라 독점 방지)
     app.state.ws_registry = WsTokenRegistry()  # WS 단기 토큰 1회용 폐기 (TRD §4.1)
 
     app.add_middleware(
