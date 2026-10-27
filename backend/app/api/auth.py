@@ -1,6 +1,8 @@
 """인증 라우터: POST /auth/register, /auth/login, /auth/refresh, /auth/logout, GET /me (TRD §7.1)."""
 from __future__ import annotations
 
+import logging
+import shutil
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -10,14 +12,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user, get_db, get_settings_dep
+from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user, get_db, get_settings_dep, require_role
 from app.core.errors import ApiError
 from app.core.security import create_token, decode_token, hash_password, needs_rehash, verify_password
-from app.models.enums import UserRole
+from app.models.enums import SessionState, UserRole
 from app.models.user import User
-from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserOut
+from app.schemas.auth import AuthResponse, DeleteAccountIn, LoginRequest, ProfileOut, ProfilePatch, RegisterRequest, UserOut
 
 router = APIRouter(tags=["auth"])
+log = logging.getLogger("app.auth")
 
 
 
@@ -108,6 +111,51 @@ async def logout(_user: User = Depends(get_current_user)) -> Response:
     return response
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=ProfileOut)
 async def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+@router.patch("/me", response_model=ProfileOut)
+async def patch_me(body: ProfilePatch, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> User:
+    """이름·연락처 수정, 비밀번호 변경(현재 비밀번호 필수). 생년월일·성별은 수정할 수 없다."""
+    user = await db.merge(user)
+    if body.new_password is not None:
+        if not await run_in_threadpool(verify_password, user.password_hash, body.current_password or ""):
+            raise ApiError(422, "WRONG_PASSWORD", "현재 비밀번호가 일치하지 않습니다", {"field": "current_password"})
+        user.password_hash = await run_in_threadpool(hash_password, body.new_password)
+    if body.name is not None:
+        user.name = body.name
+    if body.phone is not None:
+        user.phone = body.phone
+    await db.commit()
+    return user
+
+
+@router.delete("/me", status_code=204)
+async def delete_me(body: DeleteAccountIn, request: Request, user: User = Depends(require_role(UserRole.APPLICANT)),
+                    db: AsyncSession = Depends(get_db), settings: Settings = Depends(get_settings_dep)) -> Response:
+    """계정·데이터 즉시 삭제 (NFR-S7, TRD §8.3). 비밀번호 재확인 필수. DB 행(FK CASCADE) + 미디어 파일 + 벡터 인덱스를 지운다."""
+    if not await run_in_threadpool(verify_password, user.password_hash, body.password):
+        raise ApiError(422, "WRONG_PASSWORD", "비밀번호가 일치하지 않습니다", {"field": "password"})
+    from app.models import Application, InterviewSession
+
+    rows = (await db.execute(select(InterviewSession.id, InterviewSession.state).join(Application, Application.id == InterviewSession.application_id)
+                             .where(Application.user_id == user.id))).all()
+    if any(st in (SessionState.IN_PROGRESS, SessionState.PAUSED, SessionState.CODING) for _sid, st in rows):
+        raise ApiError(409, "SESSION_IN_PROGRESS", "진행 중인 면접이 있어 지금은 삭제할 수 없습니다")
+    user_id, session_ids = user.id, [sid for sid, _ in rows]
+    await db.delete(await db.merge(user))
+    await db.commit()
+    for sid in session_ids:  # 커밋 이후 파일·인덱스 정리 (실패해도 DB 삭제는 유지되며 고아 파일은 보관 정책 잡이 지운다)
+        shutil.rmtree(settings.media_root / str(sid), ignore_errors=True)
+    store = request.app.state.services.vector_store()
+    if store is not None:
+        try:
+            await run_in_threadpool(store.delete_user, str(user_id))
+        except Exception as e:  # noqa: BLE001  원문·PII 는 기록하지 않는다
+            log.warning("vector delete_user failed: %s", type(e).__name__)
+    response = Response(status_code=204)
+    response.delete_cookie(ACCESS_COOKIE, path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/api/v1/auth")
+    return response

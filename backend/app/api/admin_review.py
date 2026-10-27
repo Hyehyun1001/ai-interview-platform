@@ -13,7 +13,7 @@ from app.core.errors import ApiError
 from app.models import Application, AuditLog, EvaluationReport, RecruiterNote, ReportScore, User
 from app.models.base import utcnow
 from app.models.enums import ApplicationStatus, FinalDecision, ReportStatus
-from app.schemas.admin_review import CompareApplicant, CompareResponse, DecisionIn, DecisionOut, MailIn, MailOut
+from app.schemas.admin_review import CompareApplicant, CompareResponse, DecisionIn, DecisionOut, MailIn, MailOut, NoteIn, NoteOut
 from app.services.mailer import MailNotConfigured, MailSendFailed
 
 router = APIRouter(prefix="/admin", tags=["admin-review"])
@@ -69,6 +69,26 @@ async def decide(application_id: uuid.UUID, body: DecisionIn, request: Request, 
            {"before": before.value, "after": body.decision.value, "has_memo": bool(body.memo), "acknowledged_notified": body.acknowledge_notified})
     await db.commit()
     return DecisionOut(final_decision=app.final_decision, decided_at=app.decided_at)
+
+
+@router.get("/applications/{application_id}/notes", response_model=list[NoteOut])
+async def list_notes(application_id: uuid.UUID, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> list[NoteOut]:
+    """내부 메모 타임라인(최신순). 지원자에게는 노출되지 않는다 — 담당자 전용 + company_id 스코프."""
+    await _scoped_application(db, application_id, user)
+    rows = (await db.execute(select(RecruiterNote, User.name).outerjoin(User, User.id == RecruiterNote.author_id)
+                             .where(RecruiterNote.application_id == application_id)
+                             .order_by(RecruiterNote.created_at.desc()))).all()
+    return [NoteOut(id=n.id, author_name=name, body=n.body, created_at=n.created_at, mine=n.author_id == user.id) for n, name in rows]
+
+
+@router.post("/applications/{application_id}/notes", response_model=NoteOut, status_code=201)
+async def add_note(application_id: uuid.UUID, body: NoteIn, request: Request, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> NoteOut:
+    await _scoped_application(db, application_id, user)
+    note = RecruiterNote(application_id=application_id, author_id=user.id, body=body.body)
+    db.add(note)
+    _audit(db, request, user, "add_note", application_id)  # 감사 로그에는 본문을 남기지 않는다
+    await db.commit()
+    return NoteOut(id=note.id, author_name=user.name, body=note.body, created_at=note.created_at, mine=True)
 
 
 SUBJECTS = {"pass": "[{job}] 면접 결과 안내 - 합격", "fail": "[{job}] 면접 결과 안내", "schedule": "[{job}] 다음 전형 일정 안내"}

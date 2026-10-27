@@ -52,3 +52,17 @@ class MailOut(BaseModel):
     sent: bool
     template: str
     result_notified_at: datetime | None
+
+
+class NoteIn(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class NoteOut(BaseModel):
+    id: uuid.UUID
+    author_name: str | None  # 작성자 계정이 삭제되었으면 None
+    body: str
+    created_at: datetime
+    mine: bool  # 현재 로그인한 담당자가 쓴 메모인지

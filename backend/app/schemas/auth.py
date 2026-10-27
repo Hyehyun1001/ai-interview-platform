@@ -111,3 +111,48 @@ class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int  # 초
+
+
+class ProfileOut(UserOut):
+    """본인 조회 전용(GET/PATCH /me). 생년월일·성별은 표시만 하고 평가에 쓰지 않는다 (NFR-Q4)."""
+
+    birth_date: str | None = None
+    gender: str | None = None
+    phone: str | None = None
+
+
+class ProfilePatch(BaseModel):
+    """이름·연락처 수정과 비밀번호 변경. 비밀번호를 바꿀 때는 current_password 가 필수다."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=50)
+    phone: str | None = None
+    current_password: str | None = Field(default=None, max_length=128)
+    new_password: str | None = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("phone")
+    @classmethod
+    def _phone_format(cls, v: str | None) -> str | None:
+        if v is not None and not _PHONE_RE.match(v):
+            raise ValueError("연락처는 010-0000-0000 형식이어야 합니다")
+        return v
+
+    @field_validator("new_password")
+    @classmethod
+    def _password_strength(cls, v: str | None) -> str | None:
+        if v is not None and not (re.search(r"[A-Za-z]", v) and re.search(r"\d", v) and re.search(r"[^A-Za-z0-9]", v)):
+            raise ValueError("비밀번호는 영문, 숫자, 특수문자를 모두 포함해야 합니다")
+        return v
+
+    @model_validator(mode="after")
+    def _need_current(self) -> "ProfilePatch":
+        if self.new_password is not None and not self.current_password:
+            raise ValueError("현재 비밀번호를 입력해 주세요")
+        return self
+
+
+class DeleteAccountIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=1, max_length=128)
