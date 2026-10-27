@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { ComingSoon } from "@/components/layout/coming-soon";
+import { Suspense } from "react";
+import { MyPageView } from "@/features/mypage/mypage-view";
 
 export const metadata: Metadata = { title: "마이페이지" };
 export default function MyPage() {
-  return <ComingSoon title="마이페이지" screenId="APP-04" />;
+  return <Suspense fallback={null}><MyPageView /></Suspense>;
 }
