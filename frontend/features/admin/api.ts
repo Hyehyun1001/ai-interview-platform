@@ -63,3 +63,23 @@ export const addNote = (id: string, body: string) => apiFetch<NoteOut>(`/api/v1/
 export const listTemplates = () => apiFetch<TemplateOut[]>("/api/v1/admin/job-templates");
 export const createTemplate = (jobId: string, name: string) => apiFetch<TemplateOut>("/api/v1/admin/job-templates", J("POST", { job_id: jobId, name }));
 export const applyTemplate = (jobId: string, templateId: string) => apiFetch<JobOut>(`/api/v1/admin/jobs/${jobId}/from-template/${templateId}`, J("POST"));
+
+// ── 일정 · 알림 · 공고 이력 ──
+export type ScheduleOut = S["ScheduleOut"];
+export type JobHistoryPage = S["JobHistoryPage"];
+export const scheduleKeys = { range: (from: string, to: string) => ["admin", "schedules", from, to] as const, all: ["admin", "schedules"] as const };
+export const listSchedules = (from: string, to: string) => apiFetch<ScheduleOut[]>(`/api/v1/admin/schedules?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+export const updateSchedule = (id: string, body: ScheduleCreate) => apiFetch<ScheduleOut>(`/api/v1/admin/schedules/${id}`, J("PUT", body));
+export const deleteSchedule = (id: string) => apiFetch<void>(`/api/v1/admin/schedules/${id}`, J("DELETE"));
+export const markNotificationRead = (id: string) => apiFetch<void>(`/api/v1/admin/notifications/${id}/read`, J("POST"));
+export const fetchJobHistory = (page: number) => apiFetch<JobHistoryPage>(`/api/v1/admin/job-history?page=${page}&limit=20`);
+
+export type ApplicantPage = S["ApplicantPage"];
+export interface ApplicantsQuery { jobId?: string; review?: "unreviewed"; sort: "ended_at_desc" | "score_desc"; page: number }
+export const applicantKeys = { list: (q: ApplicantsQuery) => ["admin", "applicants", q] as const };
+export const fetchApplicants = (q: ApplicantsQuery) => {
+  const sp = new URLSearchParams({ stage: "all", sort: q.sort, page: String(q.page), limit: "20" });
+  if (q.jobId) sp.set("job_id", q.jobId);
+  if (q.review) sp.set("review", q.review);
+  return apiFetch<ApplicantPage>(`/api/v1/admin/applications?${sp}`);
+};

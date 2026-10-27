@@ -1,5 +1,7 @@
-import { ComingSoon } from "@/components/layout/coming-soon";
+import type { Metadata } from "next";
+import { CalendarView } from "@/features/admin/calendar/calendar-view";
 
+export const metadata: Metadata = { title: "일정 관리" };
 export default function Page() {
-  return <ComingSoon title="일정 관리" screenId="ADM-07" />;
+  return <CalendarView />;
 }

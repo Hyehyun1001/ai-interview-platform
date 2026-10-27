@@ -14,11 +14,11 @@ import { COMPARE_MIN, canCompare, compareHref, isComparable, toggleCompare } fro
 import { ScheduleFormDialog } from "./schedule-dialog";
 
 const RANGES: Record<DashboardRange, string> = { "7d": "최근 7일", "30d": "최근 30일", "90d": "최근 90일" };
-const PREDICTION: Record<AiPassPrediction, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
+export const PREDICTION: Record<AiPassPrediction, { label: string; tone: "success" | "warning" | "danger" | "neutral" }> = {
   likely_pass: { label: "🟢 합격권", tone: "success" }, borderline: { label: "🟡 경계", tone: "warning" },
   unlikely: { label: "🔴 미달", tone: "danger" }, unavailable: { label: "—", tone: "neutral" },
 };
-const REPORT: Record<ReportStatus, string> = { queued: "⏳ 대기", running: "⏳ 생성 중", done: "✅ 완료", failed: "⚠ 실패" };
+export const REPORT: Record<ReportStatus, string> = { queued: "⏳ 대기", running: "⏳ 생성 중", done: "✅ 완료", failed: "⚠ 실패" };
 
 function useDashboard(range: DashboardRange) {
   return useQuery({

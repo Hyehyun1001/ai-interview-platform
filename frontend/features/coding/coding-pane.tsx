@@ -44,7 +44,11 @@ export function CodingPane({ sessionId, onText, onFinish, finishing }: {
     return () => clearTimeout(t);
   }, [source, lang, sessionId, problem.data, submitted]);
 
-  useEffect(() => { if (problem.data && started.current === null) started.current = codingStartedAt(sessionId); }, [problem.data, sessionId]);
+  // 시작 시각의 기준은 서버가 센 경과 시간(새로고침·다른 기기에서도 같다). 없으면 처음 문제를 받은 시각을 sessionStorage 에 기록해 쓴다.
+  useEffect(() => {
+    if (!problem.data || started.current !== null) return;
+    started.current = problem.data.elapsed_sec != null ? Date.now() - problem.data.elapsed_sec * 1000 : codingStartedAt(sessionId);
+  }, [problem.data, sessionId]);
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(id); }, []);
   const left = started.current !== null ? remainingMs(started.current, problem.data?.time_limit_sec, now) : null;
 
@@ -52,6 +56,8 @@ export function CodingPane({ sessionId, onText, onFinish, finishing }: {
     setRunning(true);
     try { setRun(await runSamples(sessionId, lang, source)); } catch (e) {
       if (e instanceof ApiError && e.code === "RUN_IN_PROGRESS") toast.warning("이전 실행이 끝나면 다시 실행할 수 있어요");
+      else if (e instanceof ApiError && e.code === "CODING_TIME_UP") toast.error("제한시간이 끝났어요. 더 이상 실행할 수 없습니다.", { code: e.code });
+      else if (e instanceof ApiError && e.status === 429) toast.warning("실행 요청이 너무 많아요. 잠시 후 다시 시도해 주세요.", e.code);
       else toast.error(e instanceof ApiError ? e.message : "실행에 실패했어요. 다시 시도해 주세요.", e instanceof ApiError ? { code: e.code, requestId: e.requestId } : undefined);
     } finally { setRunning(false); }
   }, [sessionId, lang, source]);
@@ -64,6 +70,7 @@ export function CodingPane({ sessionId, onText, onFinish, finishing }: {
       await qc.invalidateQueries({ queryKey: codeKeys.result(sessionId) });
     } catch (e) {
       if (e instanceof ApiError && e.code === "CODE_ALREADY_SUBMITTED") await qc.invalidateQueries({ queryKey: codeKeys.result(sessionId) });
+      else if (e instanceof ApiError && e.code === "CODING_TIME_UP") toast.error("제한시간이 끝나 제출할 수 없어요. 코딩테스트를 종료해 주세요.", { code: e.code });
       else toast.error(e instanceof ApiError ? e.message : "제출에 실패했어요. 내용은 유지됩니다. 다시 시도해 주세요.", e instanceof ApiError ? { code: e.code, requestId: e.requestId } : undefined);
     } finally { setSubmitting(false); setConfirm(false); }
   }, [sessionId, lang, source, qc]);

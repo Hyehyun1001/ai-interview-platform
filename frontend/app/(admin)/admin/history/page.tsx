@@ -1,5 +1,8 @@
-import { ComingSoon } from "@/components/layout/coming-soon";
+import type { Metadata } from "next";
+import { Suspense } from "react";
+import { HistoryView } from "@/features/admin/history/history-view";
 
+export const metadata: Metadata = { title: "이력·알림" };
 export default function Page() {
-  return <ComingSoon title="이력·알림" screenId="ADM-08" />;
+  return <Suspense fallback={null}><HistoryView /></Suspense>;
 }
