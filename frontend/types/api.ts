@@ -523,6 +523,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/schedules/{schedule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Schedule */
+        put: operations["update_schedule_api_v1_admin_schedules__schedule_id__put"];
+        post?: never;
+        /** Delete Schedule */
+        delete: operations["delete_schedule_api_v1_admin_schedules__schedule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/job-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Job History
+         * @description 공고 작성·게시·마감·템플릿 이력 (ADM-08). 본인 회사 공고만.
+         */
+        get: operations["job_history_api_v1_admin_job_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/notifications": {
         parameters: {
             query?: never;
@@ -981,6 +1019,14 @@ export interface components {
              * Format: uuid
              */
             application_id: string;
+            /** Session Id */
+            session_id?: string | null;
+            /**
+             * Coding Test Enabled
+             * @default false
+             */
+            coding_test_enabled: boolean;
+            report?: components["schemas"]["ReportSummary"] | null;
             /** Applicant Name */
             applicant_name: string;
             /**
@@ -1385,6 +1431,41 @@ export interface components {
             /** Application Id */
             application_id?: string | null;
         };
+        /** JobHistoryItem */
+        JobHistoryItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Job Title */
+            job_title: string;
+            /** Action */
+            action: string;
+            /** Actor Name */
+            actor_name: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** JobHistoryPage */
+        JobHistoryPage: {
+            /** Items */
+            items: components["schemas"]["JobHistoryItem"][];
+            /** Page */
+            page: number;
+            /** Limit */
+            limit: number;
+            /** Total */
+            total: number;
+        };
         /** JobList */
         JobList: {
             /** Items */
@@ -1720,6 +1801,8 @@ export interface components {
             case_count: number;
             /** Submitted */
             submitted: boolean;
+            /** Elapsed Sec */
+            elapsed_sec?: number | null;
         };
         /**
          * ProfileOut
@@ -1914,6 +1997,33 @@ export interface components {
             /** Degraded Mode */
             degraded_mode: boolean;
         };
+        /** ReportCriterion */
+        ReportCriterion: {
+            /** Criterion */
+            criterion: string;
+            /** Score */
+            score: number;
+            /** Weight */
+            weight: number | null;
+        };
+        /** ReportFeedback */
+        ReportFeedback: {
+            /** Rank */
+            rank: number;
+            /** Title */
+            title: string;
+            /** Detail */
+            detail: string;
+            /** Evidence */
+            evidence: components["schemas"]["ReportQuote"][];
+        };
+        /** ReportQuote */
+        ReportQuote: {
+            /** Ref */
+            ref: string;
+            /** Quote */
+            quote: string;
+        };
         /**
          * ReportResponse
          * @description `done` → 200 + report, `failed` → 200, `queued|running` → 202 + stage/progress/eta_sec.
@@ -1937,6 +2047,28 @@ export interface components {
          * @enum {string}
          */
         ReportStatus: "queued" | "running" | "done" | "failed";
+        /**
+         * ReportSummary
+         * @description 담당자 전용 평가 요약(UI_SPEC §5.6.1 평가 요약 탭). 지원자용 리포트와 달리 가중치·감점 정보를 포함한다.
+         */
+        ReportSummary: {
+            /** Summary */
+            summary: string | null;
+            /** Criteria */
+            criteria: components["schemas"]["ReportCriterion"][];
+            /** Strengths */
+            strengths: components["schemas"]["ReportFeedback"][];
+            /** Improvements */
+            improvements: components["schemas"]["ReportFeedback"][];
+            /** Gaze Away Ratio */
+            gaze_away_ratio: number | null;
+            /** Gaze Penalty */
+            gaze_penalty: number;
+            /** Scored Turns */
+            scored_turns: number | null;
+            /** Unscored Turns */
+            unscored_turns: number | null;
+        };
         /** ResultOut */
         ResultOut: {
             /**
@@ -3464,6 +3596,102 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ScheduleCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    update_schedule_api_v1_admin_schedules__schedule_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_schedule_api_v1_admin_schedules__schedule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                schedule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    job_history_api_v1_admin_job_history_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobHistoryPage"];
                 };
             };
             /** @description Validation Error */

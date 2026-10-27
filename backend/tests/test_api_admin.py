@@ -107,6 +107,7 @@ async def test_detail_timeline_and_cross_company_404(rest):
         job = await rest.job(co.id)
         app, sess, turn = await rest.finished_interview(u, job, score=82.5)
         d = (await c.get(f"{API}/admin/applications/{app.id}")).json()
+        assert d["report"] is None  # 리포트가 done 이 아니면 평가 요약을 내리지 않는다
         assert d["applicant_name"] == "김지원" and d["ai_total_score"] == 82.5 and d["report_status"] == "queued"
         t = (await c.get(f"{API}/admin/applications/{app.id}/timeline")).json()
         turn_out = t["turns"][0]
@@ -253,3 +254,48 @@ async def test_audio_missing_file_is_404(rest):
 
 
 _ = ReportStatus
+
+
+async def test_schedule_update_delete_job_history_and_new_application_notification(rest):
+    from datetime import timedelta
+
+    from app.models.base import utcnow
+
+    co, _hr = await rest.company_with_recruiter()
+    job = await rest.job(co.id)
+    await rest.company_with_recruiter("타사", "o@corp.local")
+    start = utcnow() + timedelta(days=1)
+    body = {"title": "1차 면접", "type": "interview1", "starts_at": start.isoformat(), "ends_at": (start + timedelta(hours=1)).isoformat()}
+    async with rest.client() as c:
+        await rest.login(c, "hr@corp.local", "recruiter")
+        sid = (await c.post(f"{API}/admin/schedules", json=body)).json()["id"]
+        up = await c.put(f"{API}/admin/schedules/{sid}", json={**body, "title": "수정된 면접", "job_id": str(job.id)})
+        assert up.status_code == 200 and up.json()["title"] == "수정된 면접" and up.json()["job_id"] == str(job.id)
+        bad = await c.put(f"{API}/admin/schedules/{sid}", json={**body, "ends_at": (start - timedelta(hours=1)).isoformat()})
+        assert bad.status_code == 422  # 종료 < 시작
+        assert (await c.put(f"{API}/admin/schedules/{sid}", json={**body, "job_id": str(uuid.uuid4())})).status_code == 404
+    async with rest.client() as o:  # 타사 담당자는 수정·삭제할 수 없고 존재도 알 수 없다
+        await rest.login(o, "o@corp.local", "recruiter")
+        assert (await o.put(f"{API}/admin/schedules/{sid}", json=body)).status_code == 404
+        assert (await o.delete(f"{API}/admin/schedules/{sid}")).status_code == 404
+    async with rest.client() as c:
+        await rest.login(c, "hr@corp.local", "recruiter")
+        assert (await c.delete(f"{API}/admin/schedules/{sid}")).status_code == 204
+        assert (await c.get(f"{API}/admin/schedules")).json() == []
+
+        # 지원자가 지원하면 담당자에게 new_application 알림(식별자만)이 쌓인다
+        await rest.applicant()
+    async with rest.client() as a:
+        await rest.login(a, "a@corp.local")
+        assert (await a.post(f"{API}/jobs/{job.id}/apply", json={"consent": True, "consent_version": "2026-01"})).status_code == 201
+    async with rest.client() as c:
+        await rest.login(c, "hr@corp.local", "recruiter")
+        n = (await c.get(f"{API}/admin/notifications")).json()["items"]
+        assert [x["type"] for x in n] == ["new_application"] and set(n[0]["payload"]) == {"application_id", "job_id"}
+        mine = (await c.post(f"{API}/admin/jobs", json={"title": "이력 공고"})).json()
+        h = (await c.get(f"{API}/admin/job-history")).json()
+        assert h["total"] == 1 and h["items"][0]["action"] == "created" and h["items"][0]["job_title"] == "이력 공고" and h["items"][0]["actor_name"] == "담당자"
+        assert mine["id"] == h["items"][0]["job_id"]
+    async with rest.client() as o:
+        await rest.login(o, "o@corp.local", "recruiter")
+        assert (await o.get(f"{API}/admin/job-history")).json()["total"] == 0

@@ -87,8 +87,42 @@ class ApplicantPage(BaseModel):
     total: int
 
 
+class ReportQuote(BaseModel):
+    ref: str
+    quote: str
+
+
+class ReportFeedback(BaseModel):
+    rank: int
+    title: str
+    detail: str
+    evidence: list[ReportQuote]
+
+
+class ReportCriterion(BaseModel):
+    criterion: str
+    score: float
+    weight: float | None  # 실제 합산에 쓰인 가중치(%) — 점수 없는 항목을 뺀 재정규화 후 값
+
+
+class ReportSummary(BaseModel):
+    """담당자 전용 평가 요약(UI_SPEC §5.6.1 평가 요약 탭). 지원자용 리포트와 달리 가중치·감점 정보를 포함한다."""
+
+    summary: str | None
+    criteria: list[ReportCriterion]
+    strengths: list[ReportFeedback]
+    improvements: list[ReportFeedback]
+    gaze_away_ratio: float | None
+    gaze_penalty: float
+    scored_turns: int | None
+    unscored_turns: int | None
+
+
 class ApplicationDetail(BaseModel):
     application_id: uuid.UUID
+    session_id: uuid.UUID | None = None
+    coding_test_enabled: bool = False  # 꺼져 있으면 제출 코드 탭을 숨긴다
+    report: ReportSummary | None = None  # 리포트가 done 일 때만
     applicant_name: str
     job_id: uuid.UUID
     job_title: str
@@ -181,6 +215,22 @@ class ScheduleOut(BaseModel):
     application_id: uuid.UUID | None
     starts_at: datetime
     ends_at: datetime | None
+
+
+class JobHistoryItem(BaseModel):
+    id: uuid.UUID
+    job_id: uuid.UUID
+    job_title: str
+    action: str
+    actor_name: str | None  # 계정이 삭제되었거나 시스템 동작이면 null
+    created_at: datetime
+
+
+class JobHistoryPage(BaseModel):
+    items: list[JobHistoryItem]
+    page: int
+    limit: int
+    total: int
 
 
 class ScheduleCreated(BaseModel):

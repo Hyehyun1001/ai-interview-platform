@@ -13,13 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings
 from app.core.deps import get_db, get_settings_dep, require_role
 from app.core.errors import ApiError
-from app.models import (Application, AuditLog, BackgroundJob, EvaluationReport, GazeEvent, InterviewSession, InterviewTurn, JobPosting, LlmAuditLog,
+from app.models import (Application, AuditLog, BackgroundJob, EvaluationReport, GazeEvent, InterviewSession, InterviewTurn, JobHistory, JobPosting, LlmAuditLog,
                         Notification, ReportScore, Schedule, User, VoiceTimeline)
 from app.models.base import utcnow
 from app.models.enums import ApplicationStatus, FinalDecision, JobStatus, QueueStatus, ReportStatus, ScheduleType, SessionState, UserRole
 from app.schemas.admin import (ApplicantPage, ApplicationDetail, DashboardResponse, DashboardStats, DashboardSummary, ExternalTransfer,
                                GazeEventOut, JobCategoryStat, ModelState, MonthlyCount, NotificationItem, NotificationsResponse,
-                               OpenJobs, Range, RecentApplicant, RecentJob, ScheduleCreate, ScheduleCreated, ScheduleOut,
+                               OpenJobs, Range, RecentApplicant, ReportCriterion, ReportFeedback, ReportQuote, ReportSummary, RecentJob, JobHistoryItem, JobHistoryPage, ScheduleCreate, ScheduleCreated, ScheduleOut,
                                SystemMetrics, SystemModels, TimelineResponse, TimelineSegment, TimelineTurn, TimelineWord,
                                TurnReview, TurnReviewScore, UpcomingInterviews)
 from app.models.enums import TimelineKind
@@ -154,6 +154,24 @@ def _audit(db: AsyncSession, request: Request, user: User, action: str, target_i
                     ip=request.client.host if request.client else None, detail=detail))
 
 
+def _feedback(items: list | None) -> list[ReportFeedback]:
+    return [ReportFeedback(rank=i.get("rank", n + 1), title=i.get("title", ""), detail=i.get("detail", ""),
+                           evidence=[ReportQuote(ref=e.get("ref", ""), quote=e.get("quote", "")) for e in i.get("evidence") or []]) for n, i in enumerate(items or [])]
+
+
+async def _report_summary(db: AsyncSession, session_id: uuid.UUID) -> ReportSummary | None:
+    rep = (await db.execute(select(EvaluationReport).where(EvaluationReport.session_id == session_id))).scalar_one_or_none()
+    if rep is None:
+        return None
+    scores = (await db.execute(select(ReportScore).where(ReportScore.report_id == rep.id, ReportScore.turn_id.is_(None)))).scalars().all()
+    snap = rep.weights_snapshot or {}
+    eff = snap.get("effective_weights") or {}
+    info = rep.model_info or {}
+    return ReportSummary(summary=rep.summary, criteria=[ReportCriterion(criterion=s.criterion.value, score=float(s.score), weight=eff.get(s.criterion.value)) for s in scores],
+                         strengths=_feedback(rep.strengths), improvements=_feedback(rep.improvements), gaze_away_ratio=rep.gaze_away_ratio,
+                         gaze_penalty=float(snap.get("gaze_penalty", 0.0)), scored_turns=info.get("scored_turns"), unscored_turns=info.get("unscored_turns"))
+
+
 @router.get("/applications/{application_id}", response_model=ApplicationDetail)
 async def application_detail(application_id: uuid.UUID, request: Request, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> ApplicationDetail:
     """읽기 전용 — 열람 확인(first_reviewed_at)은 별도 POST .../reviewed (prefetch 로 상태가 바뀌지 않게)."""
@@ -161,9 +179,11 @@ async def application_detail(application_id: uuid.UUID, request: Request, user: 
     r = _to_recent(row)
     _audit(db, request, user, "view_application", application_id)
     await db.commit()
-    return ApplicationDetail(application_id=r.application_id, applicant_name=r.name, job_id=r.job_id, job_title=r.job_title, ai_total_score=r.ai_total_score,
-                             ai_pass_prediction=r.ai_pass_prediction, report_status=r.report_status, final_decision=r.final_decision,
-                             interview_ended_at=r.interview_ended_at)
+    job, sess = row[2], row[3]
+    return ApplicationDetail(application_id=r.application_id, session_id=sess.id, coding_test_enabled=job.coding_test_enabled, applicant_name=r.name,
+                             job_id=r.job_id, job_title=r.job_title, ai_total_score=r.ai_total_score, ai_pass_prediction=r.ai_pass_prediction,
+                             report_status=r.report_status, final_decision=r.final_decision, interview_ended_at=r.interview_ended_at,
+                             report=await _report_summary(db, sess.id) if r.report_status == ReportStatus.DONE else None)
 
 
 @router.post("/applications/{application_id}/reviewed", status_code=204)
@@ -224,6 +244,45 @@ async def create_schedule(body: ScheduleCreate, user: User = Depends(Staff), db:
     db.add(row)
     await db.commit()
     return ScheduleCreated(id=row.id)
+
+
+async def _own_schedule(db: AsyncSession, schedule_id: uuid.UUID, cid: uuid.UUID) -> Schedule:
+    row = (await db.execute(select(Schedule).where(Schedule.id == schedule_id, Schedule.company_id == cid))).scalar_one_or_none()
+    if row is None:  # 다른 회사의 일정은 존재 여부를 숨긴다
+        raise ApiError(404, "NOT_FOUND", "일정을 찾을 수 없습니다")
+    return row
+
+
+@router.put("/schedules/{schedule_id}", response_model=ScheduleOut)
+async def update_schedule(schedule_id: uuid.UUID, body: ScheduleCreate, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> ScheduleOut:
+    cid = company_of(user)
+    row = await _own_schedule(db, schedule_id, cid)
+    if body.job_id is not None and (await db.execute(select(JobPosting.id).where(JobPosting.id == body.job_id, JobPosting.company_id == cid))).first() is None:
+        raise ApiError(404, "NOT_FOUND", "공고를 찾을 수 없습니다")
+    if body.application_id is not None:
+        await _scoped_application_any(db, body.application_id, cid)
+    row.title, row.type, row.job_id, row.application_id, row.starts_at, row.ends_at = body.title, body.type, body.job_id, body.application_id, body.starts_at, body.ends_at
+    await db.commit()
+    return ScheduleOut(id=row.id, title=row.title, type=row.type, job_id=row.job_id, application_id=row.application_id, starts_at=row.starts_at, ends_at=row.ends_at)
+
+
+@router.delete("/schedules/{schedule_id}", status_code=204)
+async def delete_schedule(schedule_id: uuid.UUID, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> Response:
+    await db.delete(await _own_schedule(db, schedule_id, company_of(user)))
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/job-history", response_model=JobHistoryPage)
+async def job_history(page: int = Query(1, ge=1), limit: int = Query(20, ge=1, le=100), user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> JobHistoryPage:
+    """공고 작성·게시·마감·템플릿 이력 (ADM-08). 본인 회사 공고만."""
+    cid = company_of(user)
+    base = select(JobHistory, JobPosting.title, User.name).join(JobPosting, JobPosting.id == JobHistory.job_id).outerjoin(User, User.id == JobHistory.actor_id) \
+        .where(JobPosting.company_id == cid, JobPosting.is_template.is_(False))
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
+    rows = (await db.execute(base.order_by(JobHistory.created_at.desc()).offset((page - 1) * limit).limit(limit))).all()
+    return JobHistoryPage(items=[JobHistoryItem(id=h.id, job_id=h.job_id, job_title=title, action=h.action, actor_name=name, created_at=h.created_at) for h, title, name in rows],
+                          page=page, limit=limit, total=total)
 
 
 async def _scoped_application_any(db: AsyncSession, application_id: uuid.UUID, cid: uuid.UUID) -> None:

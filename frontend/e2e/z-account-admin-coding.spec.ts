@@ -384,3 +384,52 @@ test.describe("코딩테스트", () => {
     expect(["interview_done", "report_ready"]).toContain(done.find((a: { session_id: string }) => a.session_id === sid).status);
   });
 });
+
+// ── 담당자 지원자 상세 탭 (평가 요약 · 표준 이력서 · 제출 코드) ──────────────────────
+test.describe("담당자 상세 탭", () => {
+  test.beforeEach(async ({ page }) => { await login(page, "hr@corp.local", "recruiter"); await page.goto("/admin"); });
+
+  test("평가 요약이 기본 탭이고 점수·가중치·강점/개선점·시선·히트맵을 보여 준다 (탭은 URL 에 유지)", async ({ page }) => {
+    await page.getByRole("row", { name: /이도윤/ }).getByRole("link", { name: "상세 보기" }).click();
+    await expect(page.getByRole("tab", { name: "평가 요약" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("summary-text")).toContainText("결제 모듈 경험");
+    const table = page.getByTestId("criteria-table");
+    for (const l of ["개념 이해도", "논리성", "전달력", "태도", "직무 전문성"]) await expect(table).toContainText(l);
+    await expect(page.getByText("강점 TOP3")).toBeVisible();
+    await expect(page.getByText("정량적 성과 제시")).toBeVisible();
+    await expect(page.getByText("협업 경험 구체화")).toBeVisible();
+    await expect(page.getByTestId("gaze-card")).toContainText("4.0%");
+    await expect(page.getByTestId("heatmap")).toContainText("개념 이해도");
+    await expect(page.getByRole("tab", { name: "제출 코드" })).toHaveCount(0);              // 코딩테스트가 없는 공고는 탭 숨김
+    await page.getByRole("tab", { name: "표준 이력서" }).click();
+    await expect(page).toHaveURL(/tab=resume/);
+    await page.reload();
+    await expect(page.getByRole("tab", { name: "표준 이력서" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByText("이력서를 찾을 수 없어요")).toBeVisible();                   // 시드 지원자는 이력서 스냅샷이 없다
+  });
+
+  test("리포트 생성 중인 지원자는 요약 탭이 대기 상태를 보여 준다", async ({ page }) => {
+    await page.getByRole("row", { name: /정하늘/ }).getByRole("link", { name: "상세 보기" }).click();
+    await expect(page.getByTestId("summary-pending")).toBeVisible();
+  });
+
+  test("코딩테스트를 제출한 지원자: 표준 이력서와 제출 코드(코드·판정·케이스·정적 분석)를 볼 수 있다", async ({ page }) => {
+    const list = await (await page.request.get("/api/v1/admin/applications?limit=50")).json();
+    const mine = list.items.find((a: { name: string }) => a.name === "코딩지원자");
+    expect(mine, "코딩 지원자가 담당자 목록에 있어야 한다").toBeTruthy();
+    await page.goto(`/admin/applications/${mine.application_id}?tab=resume`);
+    const resume = page.getByTestId("resume-tab");
+    await expect(resume).toContainText("코딩지원자");
+    await expect(resume).toContainText("한빛대학교");
+    await expect(resume).toContainText("읽기 전용");
+
+    await page.getByRole("tab", { name: "제출 코드" }).click();
+    await expect(page.getByTestId("code-verdict")).toContainText("AC 정답", { timeout: 15_000 });
+    await expect(page.getByTestId("code-case").first()).toBeVisible();
+    await expect(page.getByTestId("static-analysis")).toContainText("코드 줄 수");
+    await page.waitForFunction(() => (window as unknown as { monaco?: { editor: { getModels(): { getValue(): string }[] } } }).monaco?.editor.getModels().some((m) => m.getValue().includes("print")));
+    // 리포트가 아직 생성되지 않은 지원자의 요약 탭은 대기 상태다 (페이크 스택에는 리포트 워커가 없다)
+    await page.getByRole("tab", { name: "평가 요약" }).click();
+    await expect(page.getByTestId("summary-pending").or(page.getByText("평가 요약이 없어요"))).toBeVisible();
+  });
+});

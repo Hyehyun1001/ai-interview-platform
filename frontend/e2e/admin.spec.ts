@@ -23,6 +23,7 @@ test("대시보드: 실제 API 의 KPI·공고 카드·지원자 표, 비교 선
 
 test("지원자 상세: 하이라이트 구간 재생 + 단축키 (프록시를 거친 Range 오디오)", async ({ page }) => {
   await page.getByRole("row", { name: /이도윤/ }).getByRole("link", { name: "상세 보기" }).click();
+  await page.getByRole("tab", { name: "문답·플레이어" }).click();
   await expect(page.getByTestId("highlight-player")).toBeVisible();
   await expect(page.getByTestId("segment-list").getByText("감점").first()).toBeVisible();
 
