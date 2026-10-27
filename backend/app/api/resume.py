@@ -76,17 +76,18 @@ async def _process_pdf(svc: Services, settings: Settings, job_id: str, user_id: 
     job = svc.resume_jobs[job_id]
     try:
         parsed = await run_in_threadpool(parse_pdf_isolated, data)
+        path.unlink(missing_ok=True)  # 완료 상태가 보이기 전에 지운다
         sections = split_sections(parsed.text)
         result = await extract_resume(svc.llm_factory, sections, timeout_s=settings.llm_timeout_s * 4)
         job.update(status="done", data=result.resume.model_dump(), used_ocr=parsed.used_ocr, dropped=result.dropped, fell_back=result.fell_back)
-        if not result.fell_back:  # 추출에 성공한 경우에만 마이페이지 등록본을 갱신 (실패 시 기존 등록본 보존)
-            async with sm() as db:
-                await _upsert_resume(db, user_id, ResumeSource.PDF, result.resume, str(path.name))
+        # 추출 결과는 마이페이지 등록본에 쓰지 않는다 (PRD §10 #11). 지원자가 제출 단계에서 "마이페이지에도 저장"을 고르면 PUT /me/resume 이 호출된다.
     except PdfError as e:
         job.update(status="failed", error_code=e.code, error_message=e.message)
     except Exception as e:  # noqa: BLE001  원문·PII 는 기록하지 않는다
         job.update(status="failed", error_code="EXTRACT_FAILED", error_message="이력서를 분석하지 못했습니다. 직접 작성해 주세요.")
         _ = e
+    finally:
+        path.unlink(missing_ok=True)  # 어떤 등록본·스냅샷도 원본 PDF 를 참조하지 않는다 — 개인정보 원본을 남기지 않는다
 
 
 @router.post("/me/resume/upload", response_model=ResumeUploadAccepted, status_code=202)

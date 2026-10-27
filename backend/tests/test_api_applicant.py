@@ -148,8 +148,13 @@ async def test_pdf_upload_extracts_in_background_and_isolates_users(rest):
         await wait_until(done, 20)
         job = (await c.get(f"{API}/resume-jobs/{jid}")).json()
         assert job["status"] == "done" and job["fell_back"] is False and job["data"]["name"] == "김지원"
+        # PRD §10 #11: 추출만으로는 마이페이지 등록본이 생기거나 바뀌지 않는다
+        assert (await c.get(f"{API}/me/resume")).status_code == 404
+        assert not list((rest.media_root / "resumes").glob("*.pdf"))  # 원본 PDF 는 남기지 않는다
+        # 지원자가 "마이페이지에도 저장"을 고른 경우에만 PUT /me/resume 으로 갱신된다
+        assert (await c.put(f"{API}/me/resume", json=job["data"])).status_code == 200
         me = (await c.get(f"{API}/me/resume")).json()
-        assert me["source"] == "pdf" and me["basic_info_complete"] is True
+        assert me["source"] == "manual" and me["basic_info_complete"] is True
         # 잘못된 파일
         bad = await c.post(f"{API}/me/resume/upload", files={"file": ("a.txt", b"hello", "text/plain")})
         assert bad.status_code == 415 and bad.json()["error"]["code"] == "UNSUPPORTED_MEDIA_TYPE"
