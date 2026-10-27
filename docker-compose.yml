@@ -1,0 +1,24 @@
+# 운영 DB(PostgreSQL 16) 로컬 구동용 — TRD §1.1. 앱(백엔드·프론트·Ollama)은 Apple Silicon 가속(MPS/Metal)이 필요해 호스트에서 직접 실행한다.
+# 사용: cp .env.example .env && (POSTGRES_PASSWORD 설정) && docker compose up -d postgres
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: interview-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-interview}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env 에 설정하세요}
+      POSTGRES_DB: ${POSTGRES_DB:-interview}
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"   # 내부망 외 노출 금지: 루프백에만 바인딩
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-interview} -d ${POSTGRES_DB:-interview}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

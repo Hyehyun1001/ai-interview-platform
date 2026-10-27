@@ -32,6 +32,8 @@ async def _job(session) -> JobPosting:
 
 async def test_db_connection_and_pragmas(session):
     assert (await session.execute(text("SELECT 1"))).scalar_one() == 1
+    if session.bind.dialect.name != "sqlite":
+        pytest.skip("PRAGMA 는 SQLite 전용 — PostgreSQL 은 FK 를 항상 강제한다 (test_foreign_keys 계열이 검증)")
     assert (await session.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
     assert (await session.execute(text("PRAGMA journal_mode"))).scalar_one().lower() == "wal"
 

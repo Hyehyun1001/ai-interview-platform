@@ -2,7 +2,8 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy[asyncio]>=2.0.30,<2.1   # TRD/CLAUDE.md: SQLAlchemy 2.0 (greenlet 포함)
-aiosqlite>=0.20          # dev: SQLite (WAL). prod 는 asyncpg + PostgreSQL 16
+aiosqlite>=0.20          # dev: SQLite (WAL)
+asyncpg>=0.29            # prod: PostgreSQL 16 (TRD §1.1)
 alembic>=1.13
 pydantic>=2.7
 pydantic-settings>=2.3
