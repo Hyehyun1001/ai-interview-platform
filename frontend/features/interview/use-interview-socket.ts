@@ -4,6 +4,7 @@ import { ApiError, apiFetch } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 import type { components } from "@/types/api";
 import { CLOSE, MAX_RECONNECT, backoffMs, parseServerMessage, wsBase, type ClientMessage, type GazeKind, type ServerMessage } from "./protocol";
+import { readDeviceChoice } from "@/features/device-check/device-logic";
 import { useInterviewStore } from "./store";
 
 export type WsTokens = components["schemas"]["WsTokenResponse"];
@@ -72,6 +73,8 @@ export function useInterviewSocket(sessionId: string, onUnauthorized: () => void
     const blob = new Blob(parts as BlobPart[], { type: format === "mp3" ? "audio/mpeg" : "audio/wav" });
     const url = URL.createObjectURL(blob);
     const el = new Audio(url);
+    const out = readDeviceChoice().output;  // 사전 점검에서 고른 출력 장치 (setSinkId 지원 브라우저만)
+    if (out && "setSinkId" in el) void (el as HTMLAudioElement & { setSinkId(id: string): Promise<void> }).setSinkId(out).catch(() => undefined);
     const entry = { el, url };
     audioRef.current = entry;
     let sent = false;

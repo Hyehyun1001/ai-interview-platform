@@ -2,6 +2,7 @@
 import type { FaceLandmarker } from "@mediapipe/tasks-vision";
 import { useEffect, useRef } from "react";
 import { GAZE, GazeCalibrator, GazeDetector, irisRatios, matrixToYawPitch, type GazeBase, type GazeEvent, type GazeSample } from "./gaze-logic";
+import { loadFaceLandmarker } from "./face-landmarker";
 import { useInterviewStore } from "./store";
 
 const TICK_MS = 100;  // 10fps 샘플링 (TRD §4.4)
@@ -13,6 +14,8 @@ interface Options {
   /** 답변 중일 때만 이벤트를 만든다 (시간 기준: 답변 시작) */
   active: boolean;
   onEvent: (e: GazeEvent) => void;
+  /** 사전 환경 점검(APP-06)에서 저장한 정면 기준값. 없으면 면접 시작 후 2초 보정한다. */
+  initialBase?: GazeBase | null;
 }
 
 /**
@@ -20,11 +23,13 @@ interface Options {
  * WASM·모델은 /mediapipe/ 에서 자체 호스팅한다. 모델 로드에 실패해도 면접은 계속된다(시선 분석은 선택 기능, P-Mid).
  * 판정 규칙은 순수 로직 gaze-logic.ts 가 담당한다.
  */
-export function useGazeTracker({ video, enabled, active, onEvent }: Options): void {
+export function useGazeTracker({ video, enabled, active, onEvent, initialBase }: Options): void {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const activeRef = useRef(active);
   activeRef.current = active;
+  const initialBaseRef = useRef(initialBase);
+  initialBaseRef.current = initialBase;
 
   useEffect(() => {
     if (!enabled || !video) return;
@@ -32,22 +37,12 @@ export function useGazeTracker({ video, enabled, active, onEvent }: Options): vo
     let landmarker: FaceLandmarker | null = null;
     let timer: ReturnType<typeof setInterval> | null = null;
     const calibrator = new GazeCalibrator();
-    let base: GazeBase | null = null;
+    let base: GazeBase | null = initialBaseRef.current ?? null;  // 사전 점검에서 보정해 둔 값이 있으면 곧바로 쓴다
     let detector: GazeDetector | null = null;
     let lastVideoTime = -1;
     const store = useInterviewStore.getState();
 
-    const load = async () => {
-      const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
-      const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-      const make = (delegate: "GPU" | "CPU") => FaceLandmarker.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: "/mediapipe/face_landmarker.task", delegate },
-        runningMode: "VIDEO", numFaces: 2, outputFacialTransformationMatrixes: true,
-      });
-      try { return await make("GPU"); } catch { return await make("CPU"); }  // GPU 델리게이트가 없는 환경 대비
-    };
-
-    void load().then((lm) => {
+    void loadFaceLandmarker().then((lm) => {
       if (cancelled) { lm.close(); return; }
       landmarker = lm;
       timer = setInterval(tick, TICK_MS);

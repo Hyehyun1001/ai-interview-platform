@@ -15,7 +15,7 @@ export async function login(page: Page, email: string, role: "applicant" | "recr
 const RESUME = { name: "김지원", education: [{ school: "한빛대학교", major: "컴퓨터공학" }], skills: ["Java", "Redis"] };
 
 /**
- * 실제 REST API 로 면접 준비를 끝낸다(프론트의 지원/이력서/장치 점검 화면은 아직 없다): 공고 조회 → 지원 → 이력서 확정 →
+ * 실제 REST API 로 면접 준비를 끝낸다(지원자 화면 UI 흐름은 applicant-journey.spec.ts 가 검증한다. 여기서는 면접 자체를 검증하는 테스트의 준비 단계를 빠르게 끝내려고 REST 를 직접 쓴다): 공고 조회 → 지원 → 이력서 확정 →
  * 세션 생성 → 장치 점검 → 시작(준비·warm-up 완료까지 polling). 이미 한 단계는 건너뛰므로 여러 번 호출해도 같은 세션을 돌려준다.
  */
 export async function prepareInterview(page: Page, resumeSource: "manual" | "mypage" = "manual"): Promise<string> {

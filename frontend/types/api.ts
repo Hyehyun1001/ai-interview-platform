@@ -92,10 +92,18 @@ export interface paths {
         get: operations["me_api_v1_me_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Me
+         * @description 계정·데이터 즉시 삭제 (NFR-S7, TRD §8.3). 비밀번호 재확인 필수. DB 행(FK CASCADE) + 미디어 파일 + 벡터 인덱스를 지운다.
+         */
+        delete: operations["delete_me_api_v1_me_delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Patch Me
+         * @description 이름·연락처 수정, 비밀번호 변경(현재 비밀번호 필수). 생년월일·성별은 수정할 수 없다.
+         */
+        patch: operations["patch_me_api_v1_me_patch"];
         trace?: never;
     };
     "/api/v1/jobs": {
@@ -745,6 +753,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/job-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_admin_job_templates_get"];
+        put?: never;
+        /** Create Template */
+        post: operations["create_template_api_v1_admin_job_templates_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/jobs/{job_id}/from-template/{template_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply Template
+         * @description 작성 중 공고(임시 저장)에 템플릿을 덮어쓴다. 게시된 공고는 지원자 질문이 바뀌므로 거부한다.
+         */
+        post: operations["apply_template_api_v1_admin_jobs__job_id__from_template__template_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/applicants/compare": {
         parameters: {
             query?: never;
@@ -782,6 +828,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/applications/{application_id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notes
+         * @description 내부 메모 타임라인(최신순). 지원자에게는 노출되지 않는다 — 담당자 전용 + company_id 스코프.
+         */
+        get: operations["list_notes_api_v1_admin_applications__application_id__notes_get"];
+        put?: never;
+        /** Add Note */
+        post: operations["add_note_api_v1_admin_applications__application_id__notes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/applications/{application_id}/mail": {
         parameters: {
             query?: never;
@@ -811,6 +878,74 @@ export interface paths {
         };
         /** Turn Audio */
         get: operations["turn_audio_api_v1_media_turns__turn_id__audio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/code/problem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Problem For Session */
+        get: operations["get_problem_for_session_api_v1_sessions__session_id__code_problem_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/code/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Samples */
+        post: operations["run_samples_api_v1_sessions__session_id__code_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/code/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Code */
+        post: operations["submit_code_api_v1_sessions__session_id__code_submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sessions/{session_id}/code/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Code Result */
+        get: operations["code_result_api_v1_sessions__session_id__code_result_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -923,6 +1058,45 @@ export interface components {
             /** File */
             file: string;
         };
+        /** CaseOut */
+        CaseOut: {
+            /** Index */
+            index: number;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "AC" | "WA" | "TLE" | "MLE" | "RE" | "CE" | "OLE";
+            /** Runtime Ms */
+            runtime_ms: number;
+            /** Visible */
+            visible: boolean;
+            /**
+             * Stdout
+             * @default
+             */
+            stdout: string;
+            /**
+             * Stderr
+             * @default
+             */
+            stderr: string;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /** CodeIn */
+        CodeIn: {
+            /**
+             * Language
+             * @enum {string}
+             */
+            language: "python" | "java" | "javascript";
+            /** Source */
+            source: string;
+        };
         /** CompareApplicant */
         CompareApplicant: {
             /**
@@ -1029,6 +1203,11 @@ export interface components {
             /** Decided At */
             decided_at: string | null;
         };
+        /** DeleteAccountIn */
+        DeleteAccountIn: {
+            /** Password */
+            password: string;
+        };
         /**
          * DeviceCheckIn
          * @description 사전 환경 점검 결과 (UI_SPEC APP-06). 영상·음성 원본은 보내지 않는다 — 통과 여부와 장치 이름만.
@@ -1065,6 +1244,13 @@ export interface components {
             start?: string | null;
             /** End */
             end?: string | null;
+        };
+        /** ExampleOut */
+        ExampleOut: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
         };
         /** Experience */
         Experience: {
@@ -1356,6 +1542,18 @@ export interface components {
             /** Updated At */
             updated_at?: string | null;
         };
+        /** LanguageOut */
+        LanguageOut: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "python" | "java" | "javascript";
+            /** Label */
+            label: string;
+            /** Starter */
+            starter: string;
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Email */
@@ -1435,6 +1633,30 @@ export interface components {
             /** Deadline At */
             deadline_at?: string | null;
         };
+        /** NoteIn */
+        NoteIn: {
+            /** Body */
+            body: string;
+        };
+        /** NoteOut */
+        NoteOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Author Name */
+            author_name: string | null;
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Mine */
+            mine: boolean;
+        };
         /** NotificationItem */
         NotificationItem: {
             /**
@@ -1469,6 +1691,80 @@ export interface components {
             total: number;
             /** Coding On */
             coding_on: number;
+        };
+        /** ProblemOut */
+        ProblemOut: {
+            /** Problem Id */
+            problem_id: string;
+            /** Title */
+            title: string;
+            /** Statement */
+            statement: string;
+            /** Input Format */
+            input_format: string;
+            /** Output Format */
+            output_format: string;
+            /** Constraints */
+            constraints: string[];
+            /** Examples */
+            examples: components["schemas"]["ExampleOut"][];
+            /** Languages */
+            languages: components["schemas"]["LanguageOut"][];
+            /** Time Limit Sec */
+            time_limit_sec: number | null;
+            /** Exec Time Limit Sec */
+            exec_time_limit_sec: number;
+            /** Memory Limit Mb */
+            memory_limit_mb: number;
+            /** Case Count */
+            case_count: number;
+            /** Submitted */
+            submitted: boolean;
+        };
+        /**
+         * ProfileOut
+         * @description 본인 조회 전용(GET/PATCH /me). 생년월일·성별은 표시만 하고 평가에 쓰지 않는다 (NFR-Q4).
+         */
+        ProfileOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string;
+            role: components["schemas"]["UserRole"];
+            /** Company Id */
+            company_id?: string | null;
+            /** Resume Popup Dismissed At */
+            resume_popup_dismissed_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Birth Date */
+            birth_date?: string | null;
+            /** Gender */
+            gender?: string | null;
+            /** Phone */
+            phone?: string | null;
+        };
+        /**
+         * ProfilePatch
+         * @description 이름·연락처 수정과 비밀번호 변경. 비밀번호를 바꿀 때는 current_password 가 필수다.
+         */
+        ProfilePatch: {
+            /** Name */
+            name?: string | null;
+            /** Phone */
+            phone?: string | null;
+            /** Current Password */
+            current_password?: string | null;
+            /** New Password */
+            new_password?: string | null;
         };
         /** Project */
         Project: {
@@ -1641,6 +1937,38 @@ export interface components {
          * @enum {string}
          */
         ReportStatus: "queued" | "running" | "done" | "failed";
+        /** ResultOut */
+        ResultOut: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "none" | "judging" | "done";
+            /** Submission Id */
+            submission_id?: string | null;
+            /** Language */
+            language?: string | null;
+            /** Verdict */
+            verdict?: ("AC" | "WA" | "TLE" | "MLE" | "RE" | "CE" | "OLE") | null;
+            /** Runtime Ms */
+            runtime_ms?: number | null;
+            /**
+             * Cases
+             * @default []
+             */
+            cases: components["schemas"]["CaseOut"][];
+            /**
+             * Compile Log
+             * @default
+             */
+            compile_log: string;
+            /** Source Code */
+            source_code?: string | null;
+            /** Static Analysis */
+            static_analysis?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** ResumeJobOut */
         ResumeJobOut: {
             /**
@@ -1718,6 +2046,21 @@ export interface components {
         ResumeUploadAccepted: {
             /** Job Id */
             job_id: string;
+        };
+        /** RunOut */
+        RunOut: {
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "AC" | "WA" | "TLE" | "MLE" | "RE" | "CE" | "OLE";
+            /** Cases */
+            cases: components["schemas"]["CaseOut"][];
+            /**
+             * Compile Log
+             * @default
+             */
+            compile_log: string;
         };
         /** ScheduleCreate */
         ScheduleCreate: {
@@ -1817,6 +2160,14 @@ export interface components {
              */
             degraded_mode: boolean;
         };
+        /** SubmitAccepted */
+        SubmitAccepted: {
+            /**
+             * Submission Id
+             * Format: uuid
+             */
+            submission_id: string;
+        };
         /** SystemMetrics */
         SystemMetrics: {
             /**
@@ -1828,6 +2179,11 @@ export interface components {
             free_gb: number;
             models: components["schemas"]["SystemModels"];
             external_transfer: components["schemas"]["ExternalTransfer"];
+            /**
+             * Sandbox Enabled
+             * @default false
+             */
+            sandbox_enabled: boolean;
         };
         /** SystemModels */
         SystemModels: {
@@ -1835,6 +2191,39 @@ export interface components {
             stt: components["schemas"]["ModelState"];
             tts: components["schemas"]["ModelState"];
             embed: components["schemas"]["ModelState"];
+        };
+        /** TemplateCreate */
+        TemplateCreate: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /** Name */
+            name: string;
+        };
+        /** TemplateOut */
+        TemplateOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Job Category */
+            job_category: string | null;
+            /** Question Count */
+            question_count: number;
+            /** Coding Test Enabled */
+            coding_test_enabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /**
          * TimelineKind
@@ -2209,7 +2598,71 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserOut"];
+                    "application/json": components["schemas"]["ProfileOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_me_api_v1_me_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteAccountIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    patch_me_api_v1_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfilePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileOut"];
                 };
             };
             /** @description Validation Error */
@@ -3536,6 +3989,100 @@ export interface operations {
             };
         };
     };
+    list_templates_api_v1_admin_job_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_template_api_v1_admin_job_templates_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TemplateCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    apply_template_api_v1_admin_jobs__job_id__from_template__template_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     compare_api_v1_admin_applicants_compare_get: {
         parameters: {
             query: {
@@ -3602,6 +4149,72 @@ export interface operations {
             };
         };
     };
+    list_notes_api_v1_admin_applications__application_id__notes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    add_note_api_v1_admin_applications__application_id__notes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                application_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     send_mail_api_v1_admin_applications__application_id__mail_post: {
         parameters: {
             query?: never;
@@ -3655,6 +4268,138 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_problem_for_session_api_v1_sessions__session_id__code_problem_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProblemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    run_samples_api_v1_sessions__session_id__code_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    submit_code_api_v1_sessions__session_id__code_submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CodeIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SubmitAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    code_result_api_v1_sessions__session_id__code_result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultOut"];
                 };
             };
             /** @description Validation Error */

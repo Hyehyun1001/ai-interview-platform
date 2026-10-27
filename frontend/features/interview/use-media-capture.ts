@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildAudioFrame, buildVideoFrame, backoffMs, wsBase } from "./protocol";
 import { CHUNK_SAMPLES, LinearResampler, PcmChunker, SAMPLE_RATE, floatToInt16, rmsLevel } from "./pcm";
+import { readDeviceChoice } from "@/features/device-check/device-logic";
 import { useInterviewStore } from "./store";
 
 export type MediaStatus = "idle" | "requesting" | "ready" | "error";
@@ -58,9 +59,11 @@ export function useMediaCapture() {
     stopped.current = false;
     let media: MediaStream;
     try {
+      // 사전 점검(APP-06)에서 고른 장치를 쓴다. 그 장치가 사라졌어도 실패하지 않도록 exact 가 아닌 ideal 로 요청한다.
+      const pick = readDeviceChoice();
       media = await navigator.mediaDevices.getUserMedia({
-        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 } },
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, ...(pick.audio ? { deviceId: { ideal: pick.audio } } : {}) },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 15 }, ...(pick.video ? { deviceId: { ideal: pick.video } } : {}) },
       });
     } catch (e) {
       const err = describeMediaError(e);
