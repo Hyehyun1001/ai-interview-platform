@@ -12,15 +12,17 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "gen:types": "openapi-typescript http://localhost:8000/openapi.json -o types/api.ts",
-    "postinstall": "node scripts/copy-mediapipe.mjs",
+    "postinstall": "node scripts/copy-mediapipe.mjs && node scripts/copy-monaco.mjs",
     "test:e2e:real": "playwright test -c playwright.real.config.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
     "@mediapipe/tasks-vision": "^0.10.14",
+    "@monaco-editor/react": "^4.6.0",
     "@tanstack/react-query": "^5.59.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.454.0",
+    "monaco-editor": "^0.52.0",
     "next": "^14.2.15",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

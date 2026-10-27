@@ -35,13 +35,17 @@ export interface InterviewState {
   micLevel: number;
   finishedNext: "coding" | "done" | null;
   reconnectAttempt: number;
+  /** 코딩테스트 단계 (UI_SPEC §4.7): 질문이 끝난 뒤 코딩 화면으로 전환되고, 코드 꼬리질문은 phase 를 바꾸지 않고 채팅으로 이어진다. */
+  codingActive: boolean;
+  codeQuestion: { turnId: string; text: string; deadline: number; limitSec: number } | null;
+  codeChat: { role: "ai" | "me"; text: string; turnId: string }[];
 }
 
 export const initialState: InterviewState = {
   phase: "gate", failure: null, totalMain: 0, answerLimitSec: 0, maxFollowups: 0, codingEnabled: false,
   question: null, captionOnly: false, ttsPlaying: false, countdown: null, answerDeadline: null, thinkingStage: null,
   sttFinal: null, liveTranscript: "", gaze: null, gazeStatus: "unknown", degraded: null, notice: null, micLevel: 0,
-  finishedNext: null, reconnectAttempt: 0,
+  finishedNext: null, reconnectAttempt: 0, codingActive: false, codeQuestion: null, codeChat: [],
 };
 
 export const GAZE_BANNER_MS = 5000;
@@ -57,6 +61,13 @@ export function reduce(s: InterviewState, m: ServerMessage, now: number): Partia
         ...(s.phase === "connecting" || s.phase === "reconnecting" ? { phase: "ready" as const } : {}),
       };
     case "question": {
+      if (m.kind === "code_followup") {  // 코드 꼬리질문: 음성 흐름(phase)을 건드리지 않고 채팅으로 쌓는다. 재접속으로 다시 오면 중복해서 쌓지 않는다.
+        const seen = s.codeChat.some((c) => c.turnId === m.turn_id && c.role === "ai");
+        return {
+          codingActive: true, codeQuestion: { turnId: m.turn_id, text: m.text, deadline: now + m.time_limit_sec * 1000, limitSec: m.time_limit_sec },
+          codeChat: seen ? s.codeChat : [...s.codeChat, { role: "ai", text: m.text, turnId: m.turn_id }],
+        };
+      }
       const q: Question = {
         turnId: m.turn_id, turnNo: m.turn_no, kind: m.kind, text: m.text, mainIndex: m.progress.main, mainTotal: m.progress.total,
         timeLimitSec: m.time_limit_sec, tts: m.tts,
@@ -81,6 +92,7 @@ export function reduce(s: InterviewState, m: ServerMessage, now: number): Partia
     case "degraded":
       return { degraded: m.message };
     case "session_finished":
+      if (m.next === "coding") return { phase: "finished", finishedNext: "coding", codingActive: true, codeQuestion: null, countdown: null, answerDeadline: null, thinkingStage: null, ttsPlaying: false };
       return { phase: "finished", finishedNext: m.next, countdown: null, answerDeadline: null, thinkingStage: null, ttsPlaying: false };
     case "error":
       switch (m.code) {
@@ -100,6 +112,8 @@ interface Store extends InterviewState {
   reset: () => void;
   /** 클라이언트가 answer_start 를 보낸 시점 */
   startAnswering: (limitSec: number, now?: number) => void;
+  /** 코드 꼬리질문에 텍스트로 답했다 — 입력창을 닫고 내 답변을 채팅에 남긴다. */
+  answerCode: (turnId: string, text: string) => void;
   connectionLost: () => void;
 }
 
@@ -108,6 +122,7 @@ export const useInterviewStore = create<Store>((set, get) => ({
   apply: (m, now = Date.now()) => set(reduce(get(), m, now)),
   patch: (p) => set(p),
   reset: () => set({ ...initialState }),
+  answerCode: (turnId, text) => set((st) => ({ codeQuestion: null, codeChat: [...st.codeChat, { role: "me", text, turnId }] })),
   startAnswering: (limitSec, now = Date.now()) => set({ phase: "answering", countdown: null, answerDeadline: now + limitSec * 1000 }),
   connectionLost: () => {
     set({ phase: "reconnecting", ttsPlaying: false, countdown: null });

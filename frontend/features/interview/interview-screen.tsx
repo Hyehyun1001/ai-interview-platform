@@ -2,9 +2,11 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/api/client";
-import { Card } from "@/components/ui/primitives";
+import { toast } from "@/lib/toast";
+import { CodingPane } from "@/features/coding/coding-pane";
 import { AnswerDoneButton, CountdownOverlay, FailureScreen, ReconnectOverlay, StartGate, ThinkingIndicator } from "./components/overlays";
 import { AnswerTimer, GazeWarningBanner, InterviewProgressBar, InterviewerPanel, MicLevelMeter, NoticeBanner, WebcamOverlay, useRemainingMs } from "./components/primitives";
+import { readGazeBase } from "@/features/device-check/device-logic";
 import { MAX_RECONNECT } from "./protocol";
 import { useInterviewStore } from "./store";
 import { useGazeTracker } from "./use-gaze-tracker";
@@ -46,7 +48,7 @@ export function InterviewScreen({ sessionId }: { sessionId: string }) {
 
   useGazeTracker({
     video, enabled: media.status === "ready" && s.phase !== "gate" && s.phase !== "finished", active: s.phase === "answering",
-    onEvent: sock.sendGaze,
+    onEvent: sock.sendGaze, initialBase: readGazeBase(sessionId),  // APP-06 에서 정면 보정을 마쳤다면 그 값으로 바로 시작
   });
 
   // 면접 종료 → 리포트 생성 시작(best-effort) 후 대기 화면
@@ -78,6 +80,16 @@ export function InterviewScreen({ sessionId }: { sessionId: string }) {
 
   const remaining = useRemainingMs(s.phase === "answering" ? s.answerDeadline : null);
 
+  const [finishing, setFinishing] = useState(false);
+  async function finishCoding() {
+    setFinishing(true);
+    try {
+      await apiFetch(`/api/v1/sessions/${sessionId}/finish`, { method: "POST" });
+      media.stop();
+      router.replace(`/interview/${sessionId}/waiting`);
+    } catch { toast.error("종료 처리에 실패했어요. 다시 시도해 주세요."); setFinishing(false); }
+  }
+
   const start = async () => {
     setBusy(true);
     const err = await media.acquire();
@@ -90,8 +102,13 @@ export function InterviewScreen({ sessionId }: { sessionId: string }) {
   if (s.phase === "failed" || s.phase === "blocked") {
     return <FailureScreen state={s} onRetry={() => void sock.retry()} onExit={() => router.replace("/jobs")} />;
   }
-  if (s.phase === "finished" && s.finishedNext === "coding") {
-    return <Card className="mx-auto mt-16 max-w-md p-8 text-center"><p className="font-semibold">코딩테스트 단계로 이동합니다.</p><p className="mt-1 text-sm text-muted">(코딩테스트 화면은 아직 구현되지 않았습니다.)</p></Card>;
+  if (s.codingActive) {  // 질문이 모두 끝나 코딩테스트 탭으로 전환 (UI_SPEC §4.7)
+    return (
+      <>
+        <CodingPane sessionId={sessionId} finishing={finishing} onText={(turnId, text) => sock.send({ type: "text_answer", turn_id: turnId, text })} onFinish={() => void finishCoding()} />
+        {s.phase === "reconnecting" && <ReconnectOverlay attempt={s.reconnectAttempt} max={MAX_RECONNECT} />}
+      </>
+    );
   }
 
   const q = s.question;
