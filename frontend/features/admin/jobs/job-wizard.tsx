@@ -2,11 +2,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { Modal } from "@/components/ui/modal";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { closeJob, createJob, generateBank, getBank, getJob, jobKeys, publishJob, putFollowup, putQuestions, putWeights, updateJob, type JobOut } from "../api";
+import { applyTemplate, closeJob, createJob, createTemplate, listTemplates, noteKeys, useMetrics, generateBank, getBank, getJob, jobKeys, publishJob, putFollowup, putQuestions, putWeights, updateJob, type JobOut } from "../api";
 import { DEFAULT_WEIGHTS, MAX_QUESTIONS, WEIGHT_KEYS, WEIGHT_LABELS, buildChecklist, canPublish, cutoffBands, equalWeights, isForbiddenQuestion, lockCodeQuality,
   weightsDelta, weightsSum, type WeightKey } from "./wizard-logic";
 
@@ -24,6 +26,7 @@ export function JobWizard({ jobId }: { jobId?: string }) {
   const job = q.data;
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [tplOpen, setTplOpen] = useState(false);
 
   const refresh = (j: JobOut) => { qc.setQueryData(jobKeys.one(j.id), j); void qc.invalidateQueries({ queryKey: jobKeys.list }); setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })); };
   async function run<T>(fn: () => Promise<T>): Promise<T | null> {
@@ -42,7 +45,10 @@ export function JobWizard({ jobId }: { jobId?: string }) {
         <h1 className="text-xl font-bold">{job ? job.title : "신규 공고 작성"}</h1>
         {job && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">{job.status === "draft" ? "임시 저장" : job.status === "open" ? "게시 중" : "마감"}</span>}
         <span className="ml-auto text-xs text-muted" aria-live="polite">{savedAt ? `임시 저장됨 ${savedAt}` : ""}</span>
+        {job?.status === "draft" && <Button variant="secondary" onClick={() => setTplOpen(true)} data-testid="template-load">템플릿 불러오기</Button>}
+        {job && <Link href={`/admin/jobs/${job.id}/preview`} target="_blank" rel="noopener"><Button variant="secondary" data-testid="preview-btn">미리보기</Button></Link>}
       </div>
+      {job && <TemplateDialog open={tplOpen} jobId={job.id} onClose={() => setTplOpen(false)} onApplied={(j) => { refresh(j); setTplOpen(false); toast.success("템플릿을 불러왔어요"); go(2); }} />}
       <ol className="flex flex-wrap gap-2" aria-label="진행 단계">
         {STEPS.map((s, i) => (
           <li key={s}><button type="button" disabled={!jobId && i > 0} aria-current={step === i + 1 ? "step" : undefined} onClick={() => go(i + 1)}
@@ -58,8 +64,8 @@ export function JobWizard({ jobId }: { jobId?: string }) {
           if (!job) router.replace(`/admin/jobs/${j.id}/edit?step=2`); else go(2);
           setStep(2);
         }} />}
-        {step === 2 && job && <Step2 job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onNext={() => go(3)} onPrev={() => go(1)} />}
-        {step === 3 && job && <Step3 job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onNext={() => go(4)} onPrev={() => go(2)} />}
+        {step === 2 && job && <Step2 key={job.updated_at} job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onNext={() => go(3)} onPrev={() => go(1)} />}
+        {step === 3 && job && <Step3 key={job.updated_at} job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onNext={() => go(4)} onPrev={() => go(2)} />}
         {step === 4 && job && <Step4 job={job} disabled={closed} saving={saving} run={run} go={go} onPublished={(j) => { refresh(j); toast.success("공고를 게시했어요"); router.push("/admin/jobs"); }}
           onClosed={(j) => { refresh(j); toast.success("공고를 마감했어요"); }} />}
         {step > 1 && !job && <p className="text-sm text-muted">먼저 기본 정보를 저장해 주세요.</p>}
@@ -102,6 +108,8 @@ function Step1({ job, disabled, saving, onSave }: { job?: JobOut; disabled: bool
 interface Row { text: string; category: string; time: string }
 
 function Step2({ job, disabled, saving, onChange, run, onNext, onPrev }: StepProps) {
+  const metrics = useMetrics();
+  const sandboxOff = metrics.data?.sandbox_enabled === false;  // 실행 환경이 꺼져 있으면 코딩테스트를 켤 수 없다 (UI_SPEC §4.7)
   const [coding, setCoding] = useState(job.coding_test_enabled);
   const [codingMin, setCodingMin] = useState(job.coding_test_time_limit_sec ? String(Math.round(job.coding_test_time_limit_sec / 60)) : "");
   const [limit, setLimit] = useState(String(job.answer_time_limit_sec ?? 120));
@@ -135,7 +143,7 @@ function Step2({ job, disabled, saving, onChange, run, onNext, onPrev }: StepPro
       <section className="space-y-3"><h2 className="font-semibold">면접 모듈</h2>
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="답변 기본 제한시간(초)"><input className={input} type="number" min={30} max={600} value={limit} onChange={(e) => setLimit(e.target.value)} disabled={disabled} /></Field>
-          <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={coding} onChange={(e) => setCoding(e.target.checked)} disabled={disabled} />코딩테스트 사용 (v2)</label>
+          <label className="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" checked={coding} onChange={(e) => setCoding(e.target.checked)} disabled={disabled || (sandboxOff && !coding)} data-testid="coding-toggle" />코딩테스트 사용{sandboxOff && <span className="text-xs text-muted"> (실행 환경 비활성: 서버의 SANDBOX_ENABLED 를 켜야 해요)</span>}</label>
           <Field label="코딩테스트 제한시간(분)"><input className={input} type="number" min={5} value={codingMin} onChange={(e) => setCodingMin(e.target.value)} disabled={disabled || !coding} /></Field>
         </div></section>
       <section className="space-y-2"><div className="flex items-center justify-between"><h2 className="font-semibold">질문 세트 (최대 10개)</h2>
@@ -212,8 +220,21 @@ function Step4({ job, disabled, saving, run, go, onPublished, onClosed }: { job:
   const pool = job.questions.length + job.bank_count;
   const list = buildChecklist(job, pool);
   const ok = canPublish(list);
+  const [asTemplate, setAsTemplate] = useState(false);
+  const [tplName, setTplName] = useState("");
+  const qc = useQueryClient();
   async function publish() {
-    try { onPublished(await publishJob(job.id)); } catch (e) {
+    if (asTemplate && !tplName.trim()) { toast.error("템플릿 이름을 입력해 주세요"); return; }
+    try {
+      const published = await publishJob(job.id);
+      if (asTemplate) {  // 게시가 성공한 뒤에만 템플릿으로 저장한다. 템플릿 저장 실패가 게시를 되돌리지는 않는다.
+        try { await createTemplate(job.id, tplName.trim()); void qc.invalidateQueries({ queryKey: noteKeys.templates }); toast.success("템플릿으로 저장했어요"); }
+        catch (e) { toast.error(e instanceof ApiError && e.code === "TEMPLATE_NAME_EXISTS" ? "같은 이름의 템플릿이 있어 게시만 완료했어요" : "템플릿 저장에 실패해 게시만 완료했어요"); }
+      }
+      onPublished(published);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "SANDBOX_DISABLED") toast.error("코딩테스트 실행 환경이 꺼져 있어 게시할 수 없어요. 코딩테스트를 끄거나 서버 설정을 확인하세요");
+      else
       if (e instanceof ApiError && e.code === "QUESTION_POOL_INSUFFICIENT") toast.error(`질문이 ${String(e.details.needed)}개 더 필요해요. [JD 기반 질문 추출] 또는 직접 입력해 주세요`);
       else if (e instanceof ApiError && e.code === "PUBLISH_VALIDATION") toast.error(`누락된 항목이 있어요: ${(e.details.missing as string[]).join(", ")}`);
       else toast.error(errMsg(e));
@@ -225,10 +246,49 @@ function Step4({ job, disabled, saving, run, go, onPublished, onClosed }: { job:
       <ul className="space-y-2" data-testid="checklist">{list.map((i) => (
         <li key={i.key} className="flex items-center gap-2 text-sm"><span aria-hidden>{i.ok ? "✔" : i.level === "advice" ? "⚠" : "✕"}</span><span className={cn(!i.ok && i.level === "required" && "text-danger")}>{i.label}</span>
           {!i.ok && <button type="button" className="text-primary" onClick={() => go(i.step)}>{i.level === "advice" ? "설정하러 가기" : `${i.step}단계로`}</button>}</li>))}</ul>
+      {job.status === "draft" && (
+        <div className="space-y-2 rounded border border-border p-3">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={asTemplate} onChange={(e) => setAsTemplate(e.target.checked)} disabled={disabled} data-testid="save-template" />이 설정을 템플릿으로 저장</label>
+          {asTemplate && <label className="block text-sm">템플릿 이름<input className={input} value={tplName} maxLength={100} onChange={(e) => setTplName(e.target.value)} data-testid="template-name" /></label>}
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         {job.status === "open" && <Button variant="danger" loading={saving} onClick={() => { if (window.confirm("공고를 마감할까요? 다시 열 수 없습니다.")) void run(() => closeJob(job.id)).then((j) => j && onClosed(j)); }}>공고 마감</Button>}
         {job.status === "draft" && <Button disabled={!ok || disabled} onClick={() => void publish()} data-testid="publish-btn">공고 게시</Button>}
       </div>
     </div>
+  );
+}
+
+function TemplateDialog({ open, jobId, onClose, onApplied }: { open: boolean; jobId: string; onClose: () => void; onApplied: (j: JobOut) => void }) {
+  const q = useQuery({ queryKey: noteKeys.templates, queryFn: listTemplates, enabled: open, retry: 1 });
+  const [pick, setPick] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) setPick(null); }, [open]);
+  async function apply() {
+    if (!pick) return;
+    if (!window.confirm("현재 입력한 내용(질문·가중치·모듈 설정 포함)이 템플릿 내용으로 덮어써집니다. 계속할까요?")) return;
+    setBusy(true);
+    try { onApplied(await applyTemplate(jobId, pick)); } catch (e) { toast.error(errMsg(e)); } finally { setBusy(false); }
+  }
+  return (
+    <Modal open={open} title="템플릿 불러오기" onClose={() => { if (!busy) onClose(); }}>
+      <div className="space-y-3">
+        {q.isPending && <Skeleton className="h-20" />}
+        {q.isError && <ErrorState message="템플릿을 불러오지 못했어요" onRetry={() => void q.refetch()} />}
+        {q.data && q.data.length === 0 && <p className="text-sm text-muted" data-testid="template-empty">저장된 템플릿이 없어요. 공고를 게시할 때 "템플릿으로 저장"을 선택하면 여기에 나타나요.</p>}
+        {q.data && q.data.length > 0 && (
+          <ul className="space-y-1" role="radiogroup" aria-label="템플릿 목록">
+            {q.data.map((t) => (
+              <li key={t.id}><label className={cn("flex cursor-pointer items-center gap-2 rounded border p-2 text-sm", pick === t.id ? "border-primary bg-primary/5" : "border-border")}>
+                <input type="radio" name="tpl" checked={pick === t.id} onChange={() => setPick(t.id)} />
+                <span className="font-medium">{t.name}</span><span className="text-xs text-muted">{t.title} · 질문 {t.question_count}개{t.coding_test_enabled ? " · 코딩테스트" : ""}</span>
+              </label></li>
+            ))}
+          </ul>
+        )}
+        <div className="flex justify-end gap-2"><Button variant="secondary" onClick={onClose} disabled={busy}>취소</Button><Button onClick={() => void apply()} disabled={!pick} loading={busy} data-testid="template-apply">불러오기</Button></div>
+      </div>
+    </Modal>
   );
 }

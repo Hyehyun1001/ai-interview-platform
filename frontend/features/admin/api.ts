@@ -53,3 +53,13 @@ export const decide = (id: string, body: DecisionIn) => apiFetch<S["DecisionOut"
 export const sendMail = (id: string, body: S["MailIn"]) => apiFetch<S["MailOut"]>(`/api/v1/admin/applications/${id}/mail`, J("POST", body));
 export const markReviewed = (id: string) => apiFetch<void>(`/api/v1/admin/applications/${id}/reviewed`, J("POST"));
 export const regenerateReport = (id: string) => apiFetch<{ report_status: string }>(`/api/v1/admin/applications/${id}/report/regenerate`, J("POST"));
+
+// ── 메모 · 템플릿 ──
+export type NoteOut = S["NoteOut"];
+export type TemplateOut = S["TemplateOut"];
+export const noteKeys = { list: (id: string) => ["admin", "notes", id] as const, templates: ["admin", "templates"] as const };
+export const listNotes = (id: string) => apiFetch<NoteOut[]>(`/api/v1/admin/applications/${id}/notes`);
+export const addNote = (id: string, body: string) => apiFetch<NoteOut>(`/api/v1/admin/applications/${id}/notes`, J("POST", { body }));
+export const listTemplates = () => apiFetch<TemplateOut[]>("/api/v1/admin/job-templates");
+export const createTemplate = (jobId: string, name: string) => apiFetch<TemplateOut>("/api/v1/admin/job-templates", J("POST", { job_id: jobId, name }));
+export const applyTemplate = (jobId: string, templateId: string) => apiFetch<JobOut>(`/api/v1/admin/jobs/${jobId}/from-template/${templateId}`, J("POST"));
