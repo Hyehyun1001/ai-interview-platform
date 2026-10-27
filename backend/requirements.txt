@@ -1,0 +1,19 @@
+# 백엔드 런타임 의존성 (Python 3.11, TRD §1.1)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy[asyncio]>=2.0.30,<2.1   # TRD/CLAUDE.md: SQLAlchemy 2.0 (greenlet 포함)
+aiosqlite>=0.20          # dev: SQLite (WAL). prod 는 asyncpg + PostgreSQL 16
+alembic>=1.13
+pydantic>=2.7
+pydantic-settings>=2.3
+argon2-cffi>=23.1        # 비밀번호 해시 argon2id (TRD §8.3)
+pyjwt>=2.8
+cryptography>=42         # PII 컬럼 Fernet 암호화 (TRD §8.3)
+# ── AI 파이프라인 (Phase 2) — 모델 가중치가 필요 없는 가벼운 의존성 ──
+pymupdf>=1.24            # 이력서 PDF 텍스트 레이어 추출 (TRD §3.1)
+chromadb>=1.0            # 임베디드 벡터 DB (TRD §3.3)
+langchain-core>=0.3      # LCEL 체인·PydanticOutputParser (TRD §3.4)
+langchain-ollama>=0.2    # ChatOllama
+numpy>=1.26
+psutil>=5.9            # Resource Manager 메모리 감시 (TRD §2.5)
+python-multipart>=0.0.9  # 이력서 PDF multipart 업로드

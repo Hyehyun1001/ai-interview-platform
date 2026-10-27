@@ -1,0 +1,4 @@
+# 실제 모델을 구동할 때만 필요한 무거운 의존성 (테스트는 가짜 엔진을 쓰므로 불필요)
+-r requirements.txt
+sentence-transformers>=3.0   # BAAI/bge-m3 임베딩 (TRD §1.1, torch 포함)
+faster-whisper>=1.1.0        # STT (TRD §4.2)

@@ -1,0 +1,6 @@
+# 벤치마크 하네스(backend/tests/benchmark_ai.py) 전용 의존성
+# Python 3.11 권장 (TRD §1.1)
+psutil>=5.9
+httpx>=0.27
+numpy>=1.26
+faster-whisper>=1.1.0   # large-v3-turbo 지원 버전
