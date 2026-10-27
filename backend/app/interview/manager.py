@@ -36,6 +36,12 @@ class SessionManager:
     def _release(self, session_id: uuid.UUID) -> None:
         self._runtimes.pop(session_id, None)
 
+    async def discard(self, session_id: uuid.UUID) -> None:
+        """세션을 끝내면서 런타임을 정리하고 슬롯을 반환한다. `aclose()` 만 부르면 레지스트리에 죽은 런타임이 남아 다음 지원자가 영원히 슬롯을 얻지 못한다."""
+        rt = self._runtimes.pop(session_id, None)
+        if rt is not None:
+            await rt.aclose()
+
     async def shutdown(self) -> None:
         runtimes = list(self._runtimes.values())
         self._runtimes.clear()

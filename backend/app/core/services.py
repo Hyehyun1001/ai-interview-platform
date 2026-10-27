@@ -21,6 +21,7 @@ class Services:
     vector_store_factory: Callable[[], Any | None]
     report_llm_factory: Callable[[float], Runnable] | None = None  # 리포트용(긴 컨텍스트). None 이면 report_llm_factory(settings)
     mailer: Any = None  # app.services.mailer.Mailer. None 이면 설정(SMTP_HOST)으로 생성
+    sandbox: Any = None  # app.coding.judge.Sandbox. None + SANDBOX_ENABLED=false 이면 코딩테스트 API 는 503 SANDBOX_DISABLED
     resume_jobs: dict[str, dict[str, Any]] = field(default_factory=dict)  # PII 가 든 추출 결과는 평문 jobs.payload 대신 메모리에만 둔다
     warmups: dict[Any, str] = field(default_factory=dict)  # session_id -> warming | done
     _store: Any = None
@@ -55,9 +56,17 @@ def default_vector_store(settings: Settings) -> Any:
     return VectorStore(create_chroma_client(settings.chroma_path), BgeM3Embedder(settings.embed_model, settings.embed_device))
 
 
+def _default_sandbox(settings: Settings) -> Any:
+    if not settings.sandbox_enabled:
+        return None
+    from app.coding.judge import DockerSandbox
+
+    return DockerSandbox(memory_mb=settings.sandbox_memory_mb)
+
+
 def build_default_services(settings: Settings) -> Services:
     from app.ai.llm import llm_factory, report_llm_factory
     from app.services.mailer import SmtpMailer
 
     return Services(llm_factory=llm_factory(settings), vector_store_factory=lambda: default_vector_store(settings),
-                    report_llm_factory=report_llm_factory(settings), mailer=SmtpMailer(settings))
+                    report_llm_factory=report_llm_factory(settings), mailer=SmtpMailer(settings), sandbox=_default_sandbox(settings))

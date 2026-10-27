@@ -58,6 +58,10 @@ class Settings(DatabaseSettings):
     report_poll_interval_s: float = 3.0
     report_max_attempts: int = 3
     report_worker_embedded: bool = False  # True 면 API 프로세스 안에서 워커 루프를 함께 실행 (개발 편의). 운영은 `python -m app.worker`
+    # ── 코딩테스트 샌드박스 (TRD §5, §8.2). 기본 꺼짐: Docker 와 사전 빌드된 sandbox-* 이미지가 필요하다 ──
+    sandbox_enabled: bool = False
+    sandbox_time_limit_sec: int = Field(default=3, ge=1, le=10)
+    sandbox_memory_mb: int = Field(default=128, ge=32, le=512)
     # ── 사내 SMTP (합불 안내 메일, TRD §7.6). 비어 있으면 메일 발송은 503 MAIL_NOT_CONFIGURED ──
     smtp_host: str = ""
     smtp_port: int = 25

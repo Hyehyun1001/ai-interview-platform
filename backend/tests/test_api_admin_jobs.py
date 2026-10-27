@@ -98,6 +98,14 @@ async def test_publish_validation_pool_and_lifecycle(rest):
         await c.put(f"{API}/admin/jobs/{j['id']}", json={**FULL, "deadline_at": (utcnow() - timedelta(days=1)).isoformat()})
         assert "deadline_at" in (await c.post(pub)).json()["error"]["details"]["missing"]  # 과거 마감일
         await c.put(f"{API}/admin/jobs/{j['id']}", json={"deadline_at": FULL["deadline_at"], "coding_test_enabled": True})
+        off = await c.post(pub)  # 샌드박스가 꺼져 있으면 코딩테스트 공고는 게시할 수 없다
+        assert off.status_code == 422 and off.json()["error"]["code"] == "SANDBOX_DISABLED"
+        assert (await c.get(f"{API}/admin/system/metrics")).json()["sandbox_enabled"] is False
+        from tests.fakes import FakeSandbox
+
+        rest.app.state.settings.sandbox_enabled = True
+        rest.app.state.services.sandbox = FakeSandbox()
+        assert (await c.get(f"{API}/admin/system/metrics")).json()["sandbox_enabled"] is True
         assert "coding_test_time_limit_sec" in (await c.post(pub)).json()["error"]["details"]["missing"]
         await c.put(f"{API}/admin/jobs/{j['id']}", json={"coding_test_enabled": False})
         pool = await c.post(pub)
@@ -339,3 +347,47 @@ async def test_background_and_applicant_activity_do_not_invalidate_admins_update
         assert ok.status_code == 200, ok.text
         stale = await c.put(f"{API}/admin/jobs/{j['id']}", json={"title": "또 수정", "updated_at": j0["updated_at"]})
         assert stale.status_code == 409  # 진짜 동시 편집은 여전히 감지
+
+
+async def test_job_templates_save_apply_and_isolation(rest):
+    async with rest.client() as c:
+        await staff(rest, c)
+        j = (await c.post(f"{API}/admin/jobs", json={**FULL, "coding_test_enabled": True, "coding_test_time_limit_sec": 3600})).json()
+        await c.put(f"{API}/admin/jobs/{j['id']}/questions", json={"items": [{"text": "자기소개를 해 주세요", "time_limit_sec": 90}, {"text": "Redis 를 쓴 이유는?"}]})
+        await c.put(f"{API}/admin/jobs/{j['id']}/followup-rules", json={"max_followups": 1, "trigger_ambiguous": True, "trigger_contradiction": False,
+                                                                       "trigger_stt_unclear": True, "guardrail_strict": True})
+        t = await c.post(f"{API}/admin/job-templates", json={"job_id": j["id"], "name": "백엔드 기본"})
+        assert t.status_code == 201 and t.json()["question_count"] == 2 and t.json()["coding_test_enabled"] is True
+        dup = await c.post(f"{API}/admin/job-templates", json={"job_id": j["id"], "name": "백엔드 기본"})
+        assert dup.status_code == 409 and dup.json()["error"]["code"] == "TEMPLATE_NAME_EXISTS"
+        # 템플릿 행은 공고 목록·대시보드에 섞이지 않는다
+        assert (await c.get(f"{API}/admin/jobs")).json()["total"] == 1
+        assert [x["name"] for x in (await c.get(f"{API}/admin/job-templates")).json()] == ["백엔드 기본"]
+
+        new = (await c.post(f"{API}/admin/jobs", json={"title": "새 공고", "deadline_at": FULL["deadline_at"], "headcount": 5})).json()
+        applied = await c.post(f"{API}/admin/jobs/{new['id']}/from-template/{t.json()['id']}")
+        assert applied.status_code == 200
+        a = applied.json()
+        assert a["title"] == "백엔드 개발자" and a["duties"] == FULL["duties"] and a["coding_test_enabled"] is True
+        assert [q["text"] for q in a["questions"]] == ["자기소개를 해 주세요", "Redis 를 쓴 이유는?"] and a["questions"][0]["time_limit_sec"] == 90
+        assert a["followup_rules"]["max_followups"] == 1 and a["followup_rules"]["trigger_contradiction"] is False
+        assert a["headcount"] == 5 and a["status"] == "draft"  # 마감일·정원·상태는 건드리지 않는다
+        # 원본과 독립: 새 공고 질문을 바꿔도 템플릿은 그대로
+        await c.put(f"{API}/admin/jobs/{new['id']}/questions", json={"items": [{"text": "전혀 다른 질문입니다"}]})
+        assert (await c.get(f"{API}/admin/job-templates")).json()[0]["question_count"] == 2
+        assert (await c.post(f"{API}/admin/jobs/{new['id']}/from-template/{uuid.uuid4()}")).status_code == 404
+    async with rest.client() as o:
+        await staff(rest, o, "타사", "other@corp.local")
+        assert (await o.get(f"{API}/admin/job-templates")).json() == []
+        other = (await o.post(f"{API}/admin/jobs", json={"title": "타사 공고"})).json()
+        assert (await o.post(f"{API}/admin/jobs/{other['id']}/from-template/{t.json()['id']}")).status_code == 404
+
+
+async def test_template_cannot_overwrite_published_job(rest):
+    async with rest.client() as c:
+        co, _hr = await staff(rest, c)
+        src = (await c.post(f"{API}/admin/jobs", json=FULL)).json()
+        t = (await c.post(f"{API}/admin/job-templates", json={"job_id": src["id"], "name": "t"})).json()
+        live = await rest.job(co.id, "게시 중")
+        r = await c.post(f"{API}/admin/jobs/{live.id}/from-template/{t['id']}")
+        assert r.status_code == 409 and r.json()["error"]["code"] == "JOB_NOT_DRAFT"

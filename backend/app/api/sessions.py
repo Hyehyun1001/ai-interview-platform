@@ -138,8 +138,6 @@ async def finish_session(session_id: uuid.UUID, request: Request, user: User = D
     sess = await owned_session(db, session_id, user)
     if sess.state in (SessionState.CREATED, SessionState.READY, SessionState.ABORTED):
         raise ApiError(409, "SESSION_NOT_ACTIVE", "종료할 수 있는 상태가 아닙니다", {"state": sess.state.value})
-    rt = request.app.state.session_manager.get(session_id)
-    if rt is not None:  # 진행 중 런타임이 남아 있으면 정리 (남은 슬롯 반환)
-        await rt.aclose()
+    await request.app.state.session_manager.discard(session_id)  # 진행 중 런타임이 남아 있으면 정리하고 슬롯을 반환한다
     status = await finalize_session(request.app.state.sessionmaker, session_id)
     return FinishResponse(report_status=status.value)

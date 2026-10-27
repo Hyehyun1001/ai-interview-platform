@@ -69,6 +69,43 @@ class ToneTTS:
         yield self.wav[half:]
 
 
+class DevBrain(FakeBrain):
+    """공고별로 코딩테스트 여부를 DB 에서 읽는다(FakeBrain 은 전역 설정 하나만 가진다)."""
+
+    sm = None
+
+    async def load_config(self, session_id):  # noqa: ANN001, ANN201
+        from dataclasses import replace
+
+        from app.models import Application, InterviewSession, JobPosting
+
+        cfg = self.cfg
+        if self.sm is not None:
+            async with self.sm() as db:
+                sess = await db.get(InterviewSession, session_id)
+                job = await db.get(JobPosting, (await db.get(Application, sess.application_id)).job_id)
+                if job.coding_test_enabled:
+                    cfg = replace(cfg, coding_enabled=True, coding_limit_sec=job.coding_test_time_limit_sec)
+        return cfg
+
+
+def _make_sandbox():  # noqa: ANN202
+    """사전 빌드된 도커 이미지가 있으면 실제 샌드박스를, 없으면 가짜를 쓴다(가짜는 채점 UI 흐름만 검증한다)."""
+    import shutil
+    import subprocess
+
+    from app.coding.judge import DockerSandbox
+
+    ok = shutil.which("docker") and subprocess.run(["docker", "image", "inspect", "sandbox-python:1"], capture_output=True).returncode == 0
+    if ok:
+        print("[dev-stack] sandbox: docker", flush=True)
+        return DockerSandbox()
+    from tests.fakes import FakeSandbox
+
+    print("[dev-stack] sandbox: FAKE (docker 이미지 없음 — backend/sandbox/build.sh)", flush=True)
+    return FakeSandbox()
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
@@ -85,22 +122,28 @@ def main() -> None:
     cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     command.upgrade(cfg, "head")
 
-    settings = Settings(_env_file=None, database_url=url, media_root=root / "media", max_concurrent_sessions=1,
+    sandbox = _make_sandbox()
+    settings = Settings(_env_file=None, database_url=url, media_root=root / "media", max_concurrent_sessions=1, sandbox_enabled=True,
                         jwt_secret=os.environ["JWT_SECRET"], data_encryption_key=os.environ["DATA_ENCRYPTION_KEY"])
     followup = FollowupDecision(needed=True, reason="ambiguous", grounding_keywords=["Redis"],
                                 question="Redis 캐시 무효화는 어떻게 처리하셨나요?", evidence=[])
-    brain = FakeBrain(total_main=a.total_main, followups=[followup], max_followups=1, answer_limit=60)
+    brain = DevBrain(total_main=a.total_main, followups=[followup], max_followups=1, answer_limit=60)
+    brain.code_followups = [FollowupDecision(needed=True, reason="ambiguous", grounding_keywords=["풀이", "복잡도"],
+                                             question="제출한 풀이의 시간 복잡도는 어떻게 되나요?", evidence=[])]
     engines = Engines(stt=FakeSTT(), tts=ToneTTS(), brain=brain, media=MediaStore(settings.media_root),
-                      tuning=Tuning(countdown_step_s=0.5, answer_start_grace_s=30.0))
+                      tuning=Tuning(countdown_step_s=0.5, answer_start_grace_s=30.0, pause_ttl_s=15.0))  # 일시정지 세션이 슬롯(MAX_CONCURRENT_SESSIONS=1)을 오래 잡지 않게 E2E 에서만 짧게
     store = VectorStore(create_chroma_client(None), HashEmbedder())  # 임베딩도 가짜 (bge-m3 미사용)
     class RecordingMailer:  # E2E: 실제 SMTP 대신 발송 내역만 파일에 남긴다 (수신자·제목만, 본문 제외)
         async def send(self, to: str, subject: str, body: str) -> None:
             (root / "mail.log").open("a").write(f"{to}\t{subject}\n")
 
-    services = Services(llm_factory=ScriptedFactory(default="{}"), vector_store_factory=lambda: store, mailer=RecordingMailer())
+    services = Services(llm_factory=ScriptedFactory(default="{}"), vector_store_factory=lambda: store, mailer=RecordingMailer(), sandbox=sandbox)
     app = create_app(settings, engines, services)  # init_crypto 가 여기서 호출되므로 시드보다 먼저 만든다
+    from app.core.database import create_db
+
+    _engine, brain.sm = create_db(url)  # 공고별 코딩테스트 여부를 읽는 읽기 전용 연결 (앱의 연결과 별개)
     app.state.login_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)  # E2E 는 같은 계정으로 자주 로그인한다 (운영 한도는 5회/분)
-    ids = asyncio.run(seed(url, settings.media_root, demo_admin=True))
+    ids = asyncio.run(seed(url, settings.media_root, demo_admin=True, coding_job=True))
     (root / "ids.json").write_text(json.dumps(ids))
     print(f"[dev-stack] {ids}", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=a.port, log_level="warning")

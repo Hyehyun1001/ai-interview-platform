@@ -295,7 +295,8 @@ async def system_metrics(request: Request, user: User = Depends(Staff), settings
             stt=ModelState(name=getattr(engines.stt, "model_name", settings.stt_model), loaded=(getattr(engines.stt, "_model", None) is not None) if hasattr(engines.stt, "_model") else None),
             tts=ModelState(name=settings.tts_provider, loaded=None),
             embed=ModelState(name=settings.embed_model, loaded=getattr(getattr(store, "embedder", None), "loaded", None))),
-        external_transfer=ExternalTransfer(enabled=tts_edge, tts_edge=tts_edge, cloud_fallback=False, count=external))
+        external_transfer=ExternalTransfer(enabled=tts_edge, tts_edge=tts_edge, cloud_fallback=False, count=external),
+        sandbox_enabled=settings.sandbox_enabled and request.app.state.services.sandbox is not None)
 
 
 @router.post("/applications/{application_id}/report/regenerate", status_code=202)

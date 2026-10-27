@@ -15,7 +15,7 @@ from langchain_core.runnables import Runnable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.ai.chains.followup_chain import generate_followup_streaming
+from app.ai.chains.followup_chain import generate_followup, generate_followup_streaming
 from app.ai.chains.prompts import FollowupInputs, MainQuestionInputs
 from app.ai.chains.question_chain import generate_main_question
 from app.ai.errors import LLMUnavailable
@@ -59,6 +59,33 @@ class FollowupContext:
 
 
 @dataclass
+class CodeContext:
+    """코딩테스트 제출 직후 코드 꼬리질문의 근거 (TRD §5.6). history: (코드 꼬리질문, 지원자 답변) 누적."""
+
+    submission_id: uuid.UUID
+    problem_title: str
+    problem_statement: str
+    language: str
+    source: str
+    verdict: str
+    case_verdicts: list[str]
+    analysis: dict[str, Any] | None = None
+    history: list[tuple[str, str]] = field(default_factory=list)
+
+    def as_text(self) -> str:
+        passed = sum(1 for v in self.case_verdicts if v == "AC")
+        lines = [f"[문제] {self.problem_title}: {self.problem_statement}", f"[언어] {self.language}",
+                 f"[채점 결과] {self.verdict} (통과 {passed}/{len(self.case_verdicts)})"]
+        if self.analysis:
+            a = self.analysis
+            lines.append(f"[정적 분석] 린트 {a.get('lint_issues', 0)}건, 최대 복잡도 {a.get('max_complexity', '-')}, 최장 함수 {a.get('max_function_len', '-')}줄")
+        lines.append("[제출 코드]\n" + self.source[:3000])
+        for q, a_ in self.history:
+            lines.append(f"[이전 꼬리질문] {q}\n[지원자 답변] {a_}")
+        return "\n".join(lines)
+
+
+@dataclass
 class SessionConfig:
     """세션 시작 시 DB 에서 한 번 읽어 두는 설정 (면접 중 반복 조회 방지)."""
 
@@ -74,6 +101,7 @@ class SessionConfig:
 class InterviewBrain(Protocol):
     async def load_config(self, session_id: uuid.UUID) -> SessionConfig: ...
     async def next_main_question(self, session_id: uuid.UUID, index: int, asked: list[str]) -> QuestionDraft: ...
+    async def decide_code_followup(self, ctx: CodeContext, asked: list[str], used: int, max_followups: int, session_id: uuid.UUID) -> FollowupDecision: ...
     async def decide_followup(self, ctx: FollowupContext, on_question_ready: Callable[[FollowupDecision], Awaitable[None]]) -> tuple[
         FollowupDecision, bool]:
         """(최종 결정, 음성이 JSON 완성 전에 시작되었는가). 연결 실패는 LLMUnavailable 로 올린다."""
@@ -84,8 +112,9 @@ class ChainBrain:
     """LangChain 체인 + Guardrail 기반 기본 구현. DB 는 읽기 전용으로만 사용한다."""
 
     def __init__(self, sessionmaker: async_sessionmaker, llm_factory: Callable[[float], Runnable], *,
-                 sink: GuardrailEventSink | None = None, timeout_s: float = 8.0):
+                 sink: GuardrailEventSink | None = None, timeout_s: float = 8.0, coding_allowed: bool = True):
         self.sm, self.llm_factory, self.sink, self.timeout_s = sessionmaker, llm_factory, sink, timeout_s
+        self.coding_allowed = coding_allowed  # SANDBOX_ENABLED=false 면 공고에 코테가 켜져 있어도 면접을 코딩 단계로 보내지 않는다
 
     async def _load(self, session_id: uuid.UUID) -> tuple[InterviewSession, Application, JobPosting]:
         async with self.sm() as db:
@@ -106,7 +135,7 @@ class ChainBrain:
             triggers={"trigger_ambiguous": rules.trigger_ambiguous if rules else True,
                       "trigger_contradiction": rules.trigger_contradiction if rules else True,
                       "trigger_stt_unclear": rules.trigger_stt_unclear if rules else True},
-            coding_enabled=job.coding_test_enabled, coding_limit_sec=job.coding_test_time_limit_sec,
+            coding_enabled=job.coding_test_enabled and self.coding_allowed, coding_limit_sec=job.coding_test_time_limit_sec,
             guardrail_strict=rules.guardrail_strict if rules else True)
 
     # ── 메인 질문 ──
@@ -149,6 +178,16 @@ class ChainBrain:
         return QuestionDraft(q.question, q.category, q.evidence, None, fallback_source if res.fell_back else "generated")
 
     # ── 꼬리질문 ──
+    async def decide_code_followup(self, ctx: CodeContext, asked: list[str], used: int, max_followups: int, session_id: uuid.UUID) -> FollowupDecision:
+        """제출 코드·채점·정적 분석을 근거로 한 텍스트 꼬리질문. 동일한 Guardrail(G2~G6)을 거치고, 3회 실패하면 생략한다."""
+        cfg = await self.load_config(session_id)
+        text = ctx.as_text()
+        gctx = GroundingContext(answer_text=text, resume_text="", asked_questions=asked, sources={"code": text})
+        inputs = FollowupInputs("제출한 코드를 설명해 주세요.", text, "code", "(코딩테스트 — 이력서 대신 제출 코드와 채점 결과를 근거로 한다)", {}, asked, used,
+                                max_followups, cfg.triggers, False)
+        res = await generate_followup(self.llm_factory, inputs, gctx, sink=self.sink, timeout_s=self.timeout_s, session_id=session_id)
+        return res.value
+
     async def decide_followup(self, ctx: FollowupContext, on_question_ready: Callable[[FollowupDecision], Awaitable[None]]) -> tuple[
             FollowupDecision, bool]:
         async with self.sm() as db:

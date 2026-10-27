@@ -128,3 +128,18 @@ class BankOut(BaseModel):
     status: Literal["none", "queued", "running", "done", "failed"]
     items: list[QuestionOut]
     message: str | None = None  # failed 시 사용자 안내 (LLM 불가/JD 부족)
+
+
+class TemplateCreate(_Strict):
+    job_id: uuid.UUID
+    name: str = Field(min_length=1, max_length=100)
+
+
+class TemplateOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    title: str
+    job_category: str | None
+    question_count: int
+    coding_test_enabled: bool
+    created_at: datetime

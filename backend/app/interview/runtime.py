@@ -25,7 +25,7 @@ from app.ai.errors import LLMUnavailable
 from app.ai.guardrail import GuardrailEventSink
 from app.ai.stt.base import STTEngine, SttResult
 from app.ai.tts.base import TTSEngine
-from app.interview.brain import FollowupContext, InterviewBrain, QuestionDraft, SessionConfig
+from app.interview.brain import CodeContext, FollowupContext, InterviewBrain, QuestionDraft, SessionConfig
 from app.interview.incremental_stt import IncrementalStt
 from app.interview.media_store import AnswerRecording, MediaStore
 from app.interview.vad import EnergyVad
@@ -133,6 +133,8 @@ class SessionRuntime:
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._prefetch: tuple[int, asyncio.Task[QuestionDraft]] | None = None
         self._recovered: tuple[TurnState, str] | None = None
+        self.code_followups = 0
+        self._code_ctx: CodeContext | None = None
         self.closed = False
         self.media_frames_dropped = 0
 
@@ -157,7 +159,7 @@ class SessionRuntime:
             elif last.answer_text is not None:
                 self.turn, self.phase = ts, Phase.THINKING  # 답변은 저장됐으나 다음 질문 전에 중단 → 이어서 진행
                 self._recovered = (ts, last.answer_text)
-        if sess.state == SessionState.CODING:
+        if sess.state == SessionState.CODING and self.phase != Phase.ASKING:  # ASKING = 답변 전 코드 꼬리질문 → 재접속 시 다시 보여 준다
             self.phase = Phase.CODING
         elif sess.state == SessionState.FINISHED:
             self.phase = Phase.FINISHED
@@ -279,7 +281,7 @@ class SessionRuntime:
         if self.phase in (Phase.ASKING, Phase.COUNTDOWN, Phase.AWAITING_START):
             self._cancel("audio")  # 클라이언트 없이 답변 창이 열리지 않도록 중단, 재접속 시 처음부터
             self.phase = Phase.ASKING
-        elif self.phase == Phase.ANSWERING and self.turn:
+        elif self.phase == Phase.ANSWERING and self.turn and not self.turn.text_mode:  # 텍스트 답변은 녹음이 없어 유예 처리가 필요 없다
             self._spawn("grace", self._grace_end(self.turn))
         self._spawn("detach", self._pause_and_expire())
 
@@ -616,15 +618,61 @@ class SessionRuntime:
                 await self._on_text_answer(turn, msg)
 
     async def _on_text_answer(self, turn: TurnState, msg: TextAnswer) -> None:
-        """코드 꼬리질문의 텍스트 답변 (v2). 후속 처리(코드 근거 꼬리질문 반복)는 코딩테스트 연동 시 확장한다."""
+        """코드 꼬리질문의 텍스트 답변 (TRD §5.6, §7.7)."""
         if not turn.text_mode or self.phase != Phase.ANSWERING:
             await self.error("BAD_STATE", "텍스트 답변을 받을 수 없는 상태입니다", recoverable=True)
             return
+        await self._complete_text_answer(turn, msg.text, AnswerEndReason.USER)
+
+    async def _complete_text_answer(self, turn: TurnState, text: str, reason: AnswerEndReason) -> None:
         async with self._lock:
+            if self.turn is not turn or self.phase != Phase.ANSWERING:
+                return
             self.phase = Phase.THINKING
-        await self._update_turn(turn.turn_id, answer_text=msg.text, answer_ended_at=_utcnow(),
-                                answer_end_reason=AnswerEndReason.USER)
+        self._cancel("text_timeout")
+        await self._update_turn(turn.turn_id, answer_text=text, answer_ended_at=_utcnow(), answer_end_reason=reason)
+        if self._code_ctx is not None:
+            self._code_ctx.history.append((turn.text, text))
+        if self._code_ctx is not None and self.code_followups < self.cfg.max_followups:
+            async with self._lock:
+                self.phase = Phase.CODING
+            await self._code_followup_step()  # 다음 꼬리질문이 없으면 코딩 단계로 돌아간다
+            if self.phase == Phase.CODING:
+                await self._finish()
+            return
         await self._finish()
+
+    # ── 코드 꼬리질문 (TRD §5.6) ──────────────────────────────────────────────
+    async def code_submitted(self, ctx: CodeContext) -> None:
+        """코딩테스트 제출·채점 직후 호출. 접속 중이 아니면 꼬리질문은 하지 않는다(코드 평가에는 영향 없음)."""
+        if self.closed or self.ws is None or self.phase != Phase.CODING or self.cfg is None:
+            return
+        self._code_ctx = ctx
+        self._spawn("code_followup", self._code_followup_step())
+
+    async def _code_followup_step(self) -> None:
+        ctx = self._code_ctx
+        if ctx is None or self.closed or self.code_followups >= self.cfg.max_followups:
+            return
+        try:
+            d = await self.eng.brain.decide_code_followup(ctx, list(self.asked), self.code_followups, self.cfg.max_followups, self.session_id)
+        except LLMUnavailable:
+            log.warning("code followup skipped: llm unavailable")
+            return
+        except Exception as e:  # noqa: BLE001  꼬리질문 실패가 코딩테스트 종료를 막지 않는다
+            log.warning("code followup failed: %s", type(e).__name__)
+            return
+        if not d.needed or not d.question or self.closed or self.ws is None:
+            return
+        self.code_followups += 1
+        turn = await self._begin_question(kind=TurnKind.CODE_FOLLOWUP, text=d.question, evidence=d.evidence, time_limit=self.cfg.answer_limit_sec,
+                                          reason=d.reason, text_mode=True)
+        turn.started_mono = time.monotonic()
+        self._spawn("text_timeout", self._text_timeout(turn))
+
+    async def _text_timeout(self, turn: TurnState) -> None:
+        await asyncio.sleep(turn.time_limit_sec * self.eng.tuning.timeout_scale)
+        await self._complete_text_answer(turn, "", AnswerEndReason.TIMEOUT)  # 시간 초과 = 빈 답변으로 처리하고 다음으로
 
     async def _on_gaze(self, msg: GazeEventMsg) -> None:
         async with self.sm() as db:

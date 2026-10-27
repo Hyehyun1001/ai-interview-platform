@@ -224,3 +224,4 @@ class SystemMetrics(BaseModel):
     free_gb: float
     models: SystemModels
     external_transfer: ExternalTransfer
+    sandbox_enabled: bool = False  # 코딩테스트 샌드박스 사용 가능 여부 (꺼져 있으면 공고에서 코딩테스트를 켤 수 없다)

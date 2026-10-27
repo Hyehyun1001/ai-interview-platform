@@ -157,6 +157,7 @@ class FakeBrain:
                                  triggers or {"trigger_ambiguous": True, "trigger_contradiction": True, "trigger_stt_unclear": True},
                                  coding, 3600 if coding else None, True)
         self.streaming, self.main_calls, self.followup_ctxs = streaming, [], []
+        self.code_followups: list[FollowupDecision | Exception] = []
 
     async def load_config(self, session_id: Any) -> SessionConfig:
         return self.cfg
@@ -166,6 +167,16 @@ class FakeBrain:
         return QuestionDraft(self.mains[index] if index < len(self.mains) else f"추가 질문 {index}입니다. 말씀해 주세요.",
                              category="기술")
 
+    async def decide_code_followup(self, ctx, asked, used, max_followups, session_id):  # noqa: ANN001, ANN201
+        self.code_ctxs = getattr(self, "code_ctxs", [])
+        self.code_ctxs.append(ctx)
+        self.code_histories = getattr(self, "code_histories", [])
+        self.code_histories.append(list(ctx.history))  # 호출 시점의 스냅샷 (ctx 는 가변)
+        item = self.code_followups.pop(0) if self.code_followups else FollowupDecision.skip()
+        if isinstance(item, Exception):
+            raise item
+        return item
+
     async def decide_followup(self, ctx: FollowupContext, on_question_ready):  # noqa: ANN001, ANN201
         self.followup_ctxs.append(ctx)
         item = self.followups.pop(0) if self.followups else FollowupDecision.skip()
@@ -174,3 +185,32 @@ class FakeBrain:
         if item.needed and self.streaming:
             await on_question_ready(item)
         return item, bool(item.needed and self.streaming)
+
+
+class FakeSandbox:
+    """도커 없이 채점 로직을 검증한다. 소스에 든 표지로 동작을 흉내 낸다: WRONG→오답, LOOP→시간 초과, BOOM→런타임 오류, SYNTAX→컴파일 오류, 그 외→정답."""
+
+    def __init__(self) -> None:
+        from app.coding.problems import PROBLEMS
+
+        self.answers = {c.stdin: c.expected for p in PROBLEMS for c in p.cases}
+        self.calls = 0
+
+    async def run(self, language: str, source: str, stdin: str, *, time_limit_s: float = 3.0):  # noqa: ANN201
+        from app.coding.judge import RunResult
+
+        self.calls += 1
+        if "SYNTAX" in source:
+            return RunResult(1, stderr="SyntaxError: invalid syntax", compile_error=True)
+        if "LOOP" in source:
+            return RunResult(-9, elapsed_ms=int(time_limit_s * 1000), timed_out=True)
+        if "BOOM" in source:
+            return RunResult(1, stderr="Traceback ... ZeroDivisionError", elapsed_ms=20)
+        if "WRONG" in source:
+            return RunResult(0, stdout="wrong\n", elapsed_ms=15)
+        return RunResult(0, stdout=self.answers[stdin] + "\n", elapsed_ms=12)
+
+    async def analyze(self, language: str, source: str):  # noqa: ANN201
+        from app.coding.analysis import analyze_source
+
+        return await analyze_source(self, language, source)

@@ -18,5 +18,5 @@ def build_default_engines(settings: Settings, sessionmaker: async_sessionmaker) 
     return Engines(
         stt=FasterWhisperSTT(settings.stt_model, settings.stt_compute_type, settings.stt_cpu_threads),
         tts=LocalSayTTS(settings.tts_voice),  # tts_provider=edge(외부 전송)는 opt-in 이며 아직 구현하지 않는다 (TRD §0 T-2)
-        brain=ChainBrain(sessionmaker, llm_factory(settings), sink=sink, timeout_s=settings.llm_timeout_s),
+        brain=ChainBrain(sessionmaker, llm_factory(settings), sink=sink, timeout_s=settings.llm_timeout_s, coding_allowed=settings.sandbox_enabled),
         media=MediaStore(settings.media_root), sink=sink, tuning=Tuning())

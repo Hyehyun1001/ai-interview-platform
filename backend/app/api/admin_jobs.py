@@ -18,7 +18,7 @@ from app.core.services import Services
 from app.models import Application, EvalWeight, FollowupRule, JobHistory, JobPosting, JobQuestion, User
 from app.models.base import utcnow
 from app.models.enums import ApplicationStatus, JobStatus, QuestionBankStatus, QuestionSource
-from app.schemas.admin_jobs import (BankOut, FollowupRulesPut, JobListItem, JobListOut, JobOut, JobWrite, QuestionOut, QuestionsPut, Weights,
+from app.schemas.admin_jobs import (BankOut, FollowupRulesPut, JobListItem, JobListOut, JobOut, JobWrite, QuestionOut, QuestionsPut, TemplateCreate, TemplateOut, Weights,
                                     WeightsOut, WeightsPut)
 from app.worker import scoring
 
@@ -257,7 +257,7 @@ async def get_question_bank(job_id: uuid.UUID, user: User = Depends(Staff), db: 
 
 # ── 게시 · 마감 ──────────────────────────────────────────────────────────────
 @router.post("/jobs/{job_id}/publish", response_model=JobOut)
-async def publish_job(job_id: uuid.UUID, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> JobOut:
+async def publish_job(job_id: uuid.UUID, request: Request, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> JobOut:
     job = await _job(db, job_id, user, editable=True)
     if job.status == JobStatus.OPEN:
         return await _full(db, job)
@@ -265,6 +265,8 @@ async def publish_job(job_id: uuid.UUID, user: User = Depends(Staff), db: AsyncS
                               ("duties", job.duties), ("requirements", job.requirements)) if not v]
     if job.deadline_at is not None and job.deadline_at <= utcnow():
         missing.append("deadline_at")
+    if job.coding_test_enabled and not (request.app.state.settings.sandbox_enabled and request.app.state.services.sandbox is not None):
+        raise ApiError(422, "SANDBOX_DISABLED", "코딩테스트 실행 환경(SANDBOX_ENABLED)이 꺼져 있어 코딩테스트가 있는 공고는 게시할 수 없습니다")
     if job.coding_test_enabled and not job.coding_test_time_limit_sec:
         missing.append("coding_test_time_limit_sec")
     if missing:
@@ -287,6 +289,83 @@ async def close_job(job_id: uuid.UUID, user: User = Depends(Staff), db: AsyncSes
         raise ApiError(409, "JOB_NOT_OPEN", "게시 중인 공고만 마감할 수 있습니다", {"status": job.status.value})
     job.status = JobStatus.CLOSED  # 재오픈 불가
     _audit(db, user, job.id, "closed")
+    await db.commit()
+    return await _full(db, job)
+
+
+# ── 템플릿 (is_template 행) ──────────────────────────────────────────────────
+# 템플릿은 job_postings 의 한 행(is_template=true, template_name)으로 저장한다 (TRD §6.2). 어떤 공고 조회에도 섞이지 않도록 status=deleted 로 둔다
+# (list_jobs·대시보드·지원자 목록·공개 목록은 모두 deleted 를 제외한다). 지원자·조회수·마감일·상태는 복사하지 않는다.
+COPY_FIELDS = ("title", "job_category", "industry", "duties", "requirements", "preferred", "contact_email", "answer_time_limit_sec",
+               "coding_test_enabled", "coding_test_time_limit_sec", "cutoff_score", "cutoff_margin")
+
+
+async def _template(db: AsyncSession, tid: uuid.UUID, user: User) -> JobPosting:
+    t = (await db.execute(select(JobPosting).where(JobPosting.id == tid, JobPosting.is_template.is_(True),
+                                                   JobPosting.company_id == company_of(user)))).scalar_one_or_none()
+    if t is None:
+        raise ApiError(404, "NOT_FOUND", "템플릿을 찾을 수 없습니다")
+    return t
+
+
+async def _copy_settings(db: AsyncSession, src: JobPosting, dst: JobPosting) -> None:
+    """질문 세트(+뱅크 후보)·가중치·꼬리질문 규칙을 src → dst 로 복사한다. dst 의 기존 값은 덮어쓴다."""
+    sw, sf = await _ensure_settings(db, src)
+    dw, df = await _ensure_settings(db, dst)
+    for k in (*WEIGHT_KEYS, "gaze_penalty_enabled"):
+        setattr(dw, k, getattr(sw, k))
+    for k in ("max_followups", "trigger_ambiguous", "trigger_contradiction", "trigger_stt_unclear", "guardrail_strict"):
+        setattr(df, k, getattr(sf, k))
+    await db.execute(delete(JobQuestion).where(JobQuestion.job_id == dst.id))
+    await db.flush()
+    for q in (await db.execute(select(JobQuestion).where(JobQuestion.job_id == src.id))).scalars():
+        db.add(JobQuestion(job_id=dst.id, source=q.source, text=q.text, category=q.category, time_limit_sec=q.time_limit_sec, order_no=q.order_no))
+    dst.question_bank_status = src.question_bank_status
+    dst.question_bank_generated_at = src.question_bank_generated_at
+
+
+@router.get("/job-templates", response_model=list[TemplateOut])
+async def list_templates(user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> list[TemplateOut]:
+    rows = (await db.execute(select(JobPosting).where(JobPosting.is_template.is_(True), JobPosting.company_id == company_of(user))
+                             .order_by(JobPosting.created_at.desc()))).scalars().all()
+    out = []
+    for t in rows:
+        n = (await db.execute(select(func.count()).select_from(JobQuestion).where(JobQuestion.job_id == t.id))).scalar_one()
+        out.append(TemplateOut(id=t.id, name=t.template_name or t.title, title=t.title, job_category=t.job_category, question_count=n,
+                               coding_test_enabled=t.coding_test_enabled, created_at=t.created_at))
+    return out
+
+
+@router.post("/job-templates", response_model=TemplateOut, status_code=201)
+async def create_template(body: TemplateCreate, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> TemplateOut:
+    src = await _job(db, body.job_id, user)
+    dup = (await db.execute(select(JobPosting.id).where(JobPosting.is_template.is_(True), JobPosting.company_id == src.company_id,
+                                                        JobPosting.template_name == body.name))).first()
+    if dup:
+        raise ApiError(409, "TEMPLATE_NAME_EXISTS", "같은 이름의 템플릿이 있습니다", {"field": "name"})
+    t = JobPosting(company_id=src.company_id, status=JobStatus.DELETED, is_template=True, template_name=body.name, **{k: getattr(src, k) for k in COPY_FIELDS})
+    db.add(t)
+    await db.flush()
+    await _copy_settings(db, src, t)
+    n = (await db.execute(select(func.count()).select_from(JobQuestion).where(JobQuestion.job_id == t.id))).scalar_one()
+    _audit(db, user, src.id, "template_saved")
+    await db.commit()
+    return TemplateOut(id=t.id, name=body.name, title=t.title, job_category=t.job_category, question_count=n,
+                       coding_test_enabled=t.coding_test_enabled, created_at=t.created_at)
+
+
+@router.post("/jobs/{job_id}/from-template/{template_id}", response_model=JobOut)
+async def apply_template(job_id: uuid.UUID, template_id: uuid.UUID, user: User = Depends(Staff), db: AsyncSession = Depends(get_db)) -> JobOut:
+    """작성 중 공고(임시 저장)에 템플릿을 덮어쓴다. 게시된 공고는 지원자 질문이 바뀌므로 거부한다."""
+    job = await _job(db, job_id, user, editable=True)
+    if job.status != JobStatus.DRAFT:
+        raise ApiError(409, "JOB_NOT_DRAFT", "임시 저장 상태의 공고에만 템플릿을 적용할 수 있습니다", {"status": job.status.value})
+    t = await _template(db, template_id, user)
+    for k in COPY_FIELDS:
+        setattr(job, k, getattr(t, k))
+    await _copy_settings(db, t, job)
+    job.updated_at = utcnow()
+    _audit(db, user, job.id, "template_applied")
     await db.commit()
     return await _full(db, job)
 

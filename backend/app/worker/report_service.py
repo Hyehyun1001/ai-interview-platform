@@ -18,7 +18,8 @@ from app.ai.chains.report_chain import CRITERIA as EVAL_CRITERIA
 from app.ai.chains.report_chain import evaluate_turn, write_narrative
 from app.ai.chains.report_prompts import CRITERION_LABELS, RUBRIC_VERSION, TurnEvalInputs
 from app.ai.guardrail import GuardrailEventSink
-from app.models import (Application, EvalWeight, EvaluationReport, GazeEvent, Highlight, InterviewSession, InterviewTurn, JobPosting,
+from app.coding.analysis import quality_score
+from app.models import (Application, CodeSubmission, EvalWeight, EvaluationReport, GazeEvent, Highlight, InterviewSession, InterviewTurn, JobPosting,
                         Notification, ReportScore, User, VoiceTimeline)
 from app.models.base import utcnow
 from app.models.enums import (AiPassPrediction, ApplicationStatus, Criterion, HighlightKind, ReportStatus, TimelineKind, UserRole)
@@ -56,6 +57,8 @@ class _Loaded:
     gaze_penalty_enabled: bool
     cutoff: float | None
     margin: float
+    code_quality: float | None = None  # 코딩테스트 제출이 채점된 경우의 결정적 점수 (정답률 70% + 정적 분석 30%)
+    code_summary: str = ""
     turns: list[_TurnData] = field(default_factory=list)
 
 
@@ -70,6 +73,12 @@ async def _load(sm: async_sessionmaker, session_id: uuid.UUID) -> _Loaded:
         weights = {c: getattr(w, c) for c in DEFAULT_WEIGHTS} if w else dict(DEFAULT_WEIGHTS)
         data = _Loaded(job.title, "\n".join(filter(None, [job.duties, job.requirements])), weights, bool(w and w.gaze_penalty_enabled),
                        float(job.cutoff_score) if job.cutoff_score is not None else None, float(job.cutoff_margin))
+        sub = (await db.execute(select(CodeSubmission).where(CodeSubmission.session_id == session_id, CodeSubmission.verdict.is_not(None))
+                                .order_by(CodeSubmission.submitted_at.desc()).limit(1))).scalar_one_or_none()
+        if sub is not None:
+            data.code_quality = quality_score(sub.verdict.value, sub.case_results, sub.static_analysis)
+            ok = sum(1 for c in (sub.case_results or []) if c.get("verdict") == "AC")
+            data.code_summary = f"판정 {sub.verdict.value}, 케이스 {ok}/{len(sub.case_results or [])} 통과"
         for t in turns:
             dur = t.answer_duration_ms or 0
             data.turns.append(_TurnData(t.id, t.turn_no, t.question_text, (t.answer_text or "").strip(), dur,
@@ -111,6 +120,8 @@ async def generate_report(sm: async_sessionmaker, llm_factory: Callable[[float],
     by_turn = {td.id: td for td in scorable}
     levels = {tid: {c: getattr(ev, c).level for c in EVAL_CRITERIA} for tid, ev in evals.items()}
     means = scoring.criterion_means(list(levels.values()))
+    if data.code_quality is not None:
+        means["code_quality"] = data.code_quality
     ratio = scoring.gaze_away_ratio([(t.duration_ms, t.gaze) for t in data.turns])
     penalty = scoring.gaze_penalty(ratio, data.gaze_penalty_enabled)
     total, eff = scoring.total_score(means, data.weights, penalty)
@@ -155,8 +166,9 @@ async def generate_report(sm: async_sessionmaker, llm_factory: Callable[[float],
                                          text=ev.highlight.quote, ai_comment=ev.highlight.reason,
                                          severity=(3 if worst <= 1 else 2 if worst == 2 else 1) if kind == HighlightKind.BAD else None))
         for c, m in means.items():
-            db.add(ReportScore(report_id=report_id, turn_id=None, criterion=Criterion(c), score=round(m, 2),
-                               comment=f"{len(evals)}개 질문 평균 (가중치 {eff.get(c, 0):.0f}%)", evidence=None))
+            comment = (f"코딩테스트 {data.code_summary} (가중치 {eff.get(c, 0):.0f}%)" if c == "code_quality"
+                       else f"{len(evals)}개 질문 평균 (가중치 {eff.get(c, 0):.0f}%)")
+            db.add(ReportScore(report_id=report_id, turn_id=None, criterion=Criterion(c), score=round(m, 2), comment=comment, evidence=None))
         report.status, report.total_score, report.summary = ReportStatus.DONE, total, summary
         report.strengths, report.improvements, report.gaze_away_ratio = strengths, improvements, ratio
         report.weights_snapshot = {"weights": data.weights, "effective_weights": {k: round(v, 2) for k, v in eff.items()},

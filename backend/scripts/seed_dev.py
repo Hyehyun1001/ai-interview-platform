@@ -37,7 +37,7 @@ def _sine_pcm(seconds: float, hz: int = 220) -> bytes:
     return b"".join(struct.pack("<h", int(2500 * math.sin(2 * math.pi * hz * i / 16000))) for i in range(int(16000 * seconds)))
 
 
-async def seed(url: str, media_root: Path, *, demo_admin: bool = False, manual_questions: int = len(QUESTIONS)) -> dict:
+async def seed(url: str, media_root: Path, *, demo_admin: bool = False, manual_questions: int = len(QUESTIONS), coding_job: bool = False) -> dict:
     engine, sm = create_db(url)
     out: dict = {}
     async with sm() as s:
@@ -58,6 +58,15 @@ async def seed(url: str, media_root: Path, *, demo_admin: bool = False, manual_q
         s.add_all([FollowupRule(job_id=job.id, max_followups=1), EvalWeight(job_id=job.id)])
         s.add_all([JobQuestion(job_id=job.id, source=QuestionSource.MANUAL, text=q, order_no=i + 1) for i, q in enumerate(QUESTIONS[:manual_questions])])
         out.update(company_id=str(co.id), job_id=str(job.id), applicant_id=str(applicant.id), recruiter_id=str(hr.id))
+        if coding_job:  # 코딩테스트 E2E 용: 코딩테스트가 켜진 공고 (SANDBOX_ENABLED 스택에서만 의미가 있다)
+            cj = JobPosting(company_id=co.id, title="알고리즘 엔지니어 (코딩테스트 포함)", job_category="개발", status=JobStatus.OPEN, deadline_at=utcnow() + timedelta(days=6),
+                            duties="알고리즘 설계와 구현", requirements="Python 또는 Java, 자료구조", headcount=1, answer_time_limit_sec=60,
+                            coding_test_enabled=True, coding_test_time_limit_sec=1800)
+            s.add(cj)
+            await s.flush()
+            s.add_all([FollowupRule(job_id=cj.id, max_followups=1), EvalWeight(job_id=cj.id, concept_understanding=20, logic=20, delivery=10, attitude=10, job_expertise=10, code_quality=30)])
+            s.add_all([JobQuestion(job_id=cj.id, source=QuestionSource.MANUAL, text=q, order_no=i + 1) for i, q in enumerate(QUESTIONS)])
+            out["coding_job_id"] = str(cj.id)
 
         if demo_admin:  # 관리자 화면 확인용: 면접을 마친 지원자 3명 (음성·시선·하이라이트 포함). 마지막 1명은 리포트 생성 중
             store = MediaStore(media_root)
@@ -109,6 +118,10 @@ async def seed(url: str, media_root: Path, *, demo_admin: bool = False, manual_q
 if __name__ == "__main__":
     from app.core.config import DatabaseSettings, Settings
 
+    from app.core.crypto import init_crypto
+
+    settings = Settings()  # type: ignore[call-arg]
+    init_crypto(settings.data_encryption_key)  # PII 암호화 컬럼에 쓰려면 API 와 같은 키가 필요하다
     db_url = DatabaseSettings().database_url
-    media = Settings().media_root  # type: ignore[call-arg]
+    media = settings.media_root
     print(asyncio.run(seed(db_url, media, demo_admin="--demo-admin" in sys.argv)))

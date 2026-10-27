@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import admin, admin_jobs, admin_review, auth, jobs, media, reports, resume, sessions, ws
+from app.api import admin, admin_jobs, admin_review, auth, coding, jobs, media, reports, resume, sessions, ws
 from app.core.config import Settings, get_settings
 from app.core.crypto import init_crypto
 from app.core.database import create_db
@@ -78,7 +78,7 @@ def create_app(settings: Settings | None = None, engines: Engines | None = None,
         return response
 
     install_error_handlers(app)
-    for r in (auth.router, jobs.router, resume.router, sessions.router, reports.router, admin.router, admin_jobs.router, admin_review.router, media.router):
+    for r in (auth.router, jobs.router, resume.router, sessions.router, reports.router, admin.router, admin_jobs.router, admin_review.router, media.router, coding.router):
         app.include_router(r, prefix=API_PREFIX)
     install_openapi(app)
     app.include_router(ws.router)  # WS 경로는 /api/v1 접두사 없이 /ws/... (TRD §4.1)
