@@ -113,6 +113,8 @@ flowchart LR
 | 로그인 상태로 `/login` 접근 | role에 맞는 홈으로 redirect |
 | access 토큰 만료(401) | `/auth/refresh` 1회 시도 → 실패 시 로그아웃 + `/login` |
 
+> **구현 메모 (Phase 3):** 접근 제어의 기준은 클라이언트 `AuthGuard`(`/me` 조회)이며, `middleware.ts` 는 쿠키 유무에 따른 편의 redirect 만 한다. 쿠키가 만료된 상태에서 `/login` 을 redirect 하면 루프가 생기므로 미들웨어는 `/login` 을 redirect 하지 않는다. **대신 `/login` 만 예외로, 미들웨어가 백엔드 `GET /me` 를 호출해 200 일 때만 역할별 홈(또는 안전한 `next`)으로 redirect 한다.** 401·백엔드 불가·타임아웃이면 로그인 화면을 그대로 보여 준다(루프 방지). `next` 는 `safeNext()` 로 같은 출처 경로만 허용한다.
+
 Route Group: `(public)`, `(applicant)`, `(interview)`, `(admin)` — 각 그룹이 자신의 `layout.tsx` 를 가진다 (§2.1).
 
 ---
@@ -1062,7 +1064,7 @@ stateDiagram-v2
 | 배너 위치 | 레이아웃을 밀지 않도록 `position: sticky` 오버레이(콘텐츠 점프 방지), `role="alert"` |
 | 얼굴 미검출 2초+ | `face_lost` 이벤트 + 배너 "얼굴이 보이지 않아요" |
 
-**⑥ Thinking 상태 (E2E 목표 ≤6s, p95 ≤10s)**
+**⑥ Thinking 상태 (E2E 목표 p50 ≤9.5s, p95 ≤12s — TRD §2.4)**
 
 | `thinking.stage` | 표시 문구 |
 |---|---|
@@ -1091,7 +1093,7 @@ stateDiagram-v2
 
 | 케이스 | 처리 |
 |---|---|
-| **WS 끊김** | `ReconnectOverlay`. 지수 백오프 1→2→4s, **최대 5회**. 성공 시 `resume{last_turn_id}` → 서버가 현재 질문·남은 시간 재전송 → 원래 상태로 복귀. 오디오 청크는 로컬 큐에 최대 N초 버퍼 후 재전송(`ack seq` 기준) |
+| **WS 끊김** | `ReconnectOverlay`. 지수 백오프 1→2→4s, **최대 5회**. 재접속마다 **`ws-token` 을 새로 발급**(1회용)받아 control 먼저, media 는 그 다음에 연결한다. 성공하면 서버가 현재 질문·남은 시간을 자동 재전송 → 원래 상태로 복귀(답변 중이었다면 낭독·카운트다운 없이 녹음 이어서). 오디오 청크는 로컬 큐에 최대 N초 버퍼 후 재전송(`ack_seq` 기준) |
 | 재연결 5회 실패 | `Failed` 화면 "연결할 수 없어요. 답변은 저장되어 있습니다. [다시 연결] / 나중에 이어서 하기" — 세션은 서버에서 30분 `paused` 유지 |
 | **브라우저 새로고침** | 진입 시 `GET /sessions/{id}/state` 로 상태 복원 → 해당 턴 처음부터 재개(질문 재낭독 + 카운트다운). 이미 완료된 턴은 재진행 안 함 |
 | 탭 닫기/뒤로가기 | `beforeunload` 경고. 내부 네비게이션은 `LeaveGuard` 가 차단 |
@@ -1946,17 +1948,29 @@ ApplicationDetailPage (Server: GET /admin/applications/{id})
 | S→C | `stt_partial` | `LiveTranscript` 갱신 (토글 ON일 때) |
 | C→S | `text_answer{turn_id,text}` | 코딩 탭의 `CodeFollowupChat` 에서 전송 (`code_followup` 전용, 음성 흐름과 무관) |
 | C→S | `answer_end{reason}` | [답변 완료] 또는 타임아웃. 상태 `Thinking` |
-| S→C | `thinking{stage}` | `ThinkingIndicator` 문구 전환 |
+| S→C | `thinking{stage}` | `ThinkingIndicator` 문구 전환 (`generation` 단계는 `turn_id` 가 null) |
 | S→C | `stt_final{low_confidence}` | 최종 자막 확정, 저신뢰 시 안내 |
 | C→S | `gaze_event` | `useGazeTracker` 판정 시 송신 (디바운스 병합) |
 | S→C | `gaze_warning{count,message}` | `GazeWarningBanner` 표시 (최대 3회) |
 | S→C | `degraded{reason,message}` | `DegradedBanner` 또는 대기 오버레이 |
 | S→C | `error{code,recoverable,message}` | recoverable=true → Toast/배너, false → 중단 화면 (§4.6.6) |
-| C→S | `resume{last_turn_id}` | 재연결 직후 송신 |
+| C→S | `resume{last_turn_id}` | 재연결 후 보내도 되지만 **필수 아님** — 서버가 접속 직후 현재 질문·남은 시간을 자동 재전송한다 (TRD §4.1) |
 | S→C | `session_finished{next}` | `coding` → 코딩 탭 활성 / `done` → `/finish` 호출 후 `/waiting` |
 | 양방향 | `ping/pong` | 15초 주기, 2회 무응답 시 재연결 |
 
-**미디어 채널** `WS /ws/sessions/{id}/media`: 바이너리 `[1B type][4B seq][payload]`, `0x01`=오디오 PCM16 16kHz mono(500ms 청크), `0x02`=영상 webm(5초). 서버 `ack{seq}`(5청크마다, control 채널)를 받지 못한 청크는 재전송 큐로 보관한다.
+**서버 에러 코드별 UI** (`error` 메시지, TRD §7.7)
+
+| `code` | UI 반응 |
+|---|---|
+| `TTS_FAILED` | Toast warning "음성 합성에 실패해 자막으로 진행합니다" → 자막만 보이고 5초 후 자동 카운트다운 (`tts_done` 을 보내면 즉시) |
+| `STT_FAILED` | `DegradedBanner` "음성 인식이 잠시 지연되었습니다", 빈 답변으로 다음 질문 진행 |
+| `ANSWER_TOO_SHORT` | Toast "다시 말씀해 주세요" → **같은 질문**의 카운트다운 3-2-1 이 다시 시작 (질문·TTS 재생성 없음). 최대 2회, 이후엔 짧은 답변 그대로 처리 |
+| `BAD_MESSAGE` · `BAD_TURN` · `BAD_STATE` | 사용자에게 노출하지 않고 로그만 남김 (클라이언트 버그 신호) |
+| `INTERNAL` (recoverable=false) | 중단 화면 "문제가 발생했어요" + `[상태 확인]` |
+
+**WS close code 처리**: `4401` → 로그인 만료 처리(`/login?next=`) · `4403`/`4404` → `not-found` · `4408` → 재연결 시도 · `4409` `ALREADY_CONNECTED` → "다른 창에서 면접이 진행 중입니다" 차단 화면 · `4409` `SESSION_SLOT_UNAVAILABLE` → 대기 안내 후 30초마다 재시도 · `4409` `SESSION_NOT_ACTIVE` → 면접 종료/만료 안내 · `4400` → 재연결하지 않고 오류 화면. 미디어 연결이 먼저 열리면 `CONTROL_REQUIRED`(4409)가 오므로 항상 control 을 먼저 연다.
+
+**미디어 채널** `WS /ws/sessions/{id}/media`: 바이너리 `[1B type][4B seq][payload]`, `0x01`=오디오 PCM16 16kHz mono(500ms 청크), `0x02`=영상 webm(5초). **seq 는 연결 내내 이어서 증가**(0 으로 되돌리면 서버가 재전송 중복으로 버린다). 서버는 5청크마다 control 채널로 `ack{ack_seq, missing}` 를 보내며(봉투 `seq` 와 구분), 받지 못한 청크는 재전송 큐로 보관한다. `answer_start` 를 보낸 **뒤에** 오디오를 보내야 하며 답변 중이 아닐 때 보낸 오디오는 버려진다.
 
 ---
 
