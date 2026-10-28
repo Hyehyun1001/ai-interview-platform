@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.next-e2e-*/
 out/
 # 빌드/개발 시점에 받는 산출물 (scripts/copy-mediapipe.mjs, scripts/fetch-face-model.mjs)
 public/mediapipe/

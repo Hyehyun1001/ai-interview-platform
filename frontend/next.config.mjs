@@ -2,6 +2,8 @@
 const BACKEND = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
 const nextConfig = {
+  // E2E 는 사용자의 개발 서버(.next)와 캐시가 섞이지 않게 별도 디렉터리를 쓴다 (playwright.config.ts)
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   poweredByHeader: false,
   // 쿠키 인증(HttpOnly)이 동일 출처로 동작하도록 /api/v1 을 백엔드로 프록시한다. WebSocket 은 Next 가 프록시하지 못하므로
