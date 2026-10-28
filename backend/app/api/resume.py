@@ -78,7 +78,7 @@ async def _process_pdf(svc: Services, settings: Settings, job_id: str, user_id: 
         parsed = await run_in_threadpool(parse_pdf_isolated, data)
         path.unlink(missing_ok=True)  # 완료 상태가 보이기 전에 지운다
         sections = split_sections(parsed.text)
-        result = await extract_resume(svc.llm_factory, sections, timeout_s=settings.llm_timeout_s * 4)
+        result = await extract_resume(svc.extract_llm_factory or svc.llm_factory, sections, timeout_s=settings.resume_extract_timeout_s)
         job.update(status="done", data=result.resume.model_dump(), used_ocr=parsed.used_ocr, dropped=result.dropped, fell_back=result.fell_back)
         # 추출 결과는 마이페이지 등록본에 쓰지 않는다 (PRD §10 #11). 지원자가 제출 단계에서 "마이페이지에도 저장"을 고르면 PUT /me/resume 이 호출된다.
     except PdfError as e:

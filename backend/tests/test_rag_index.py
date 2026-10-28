@@ -5,11 +5,11 @@ import pytest
 
 from app.ai.rag.chunker import (EXPERIENCE_MAX, SELF_INTRO_MAX, SELF_INTRO_OVERLAP, chunk_jd, chunk_resume, recursive_split)
 from app.ai.rag.embedder import BgeM3Embedder, should_keep_resident
-from app.ai.rag.extractor import build_input, extract_resume, sanitize_against_source
+from app.ai.rag.extractor import MAX_INPUT_CHARS, SECTION_QUOTA, build_input, extract_resume, sanitize_against_source
 from app.ai.rag.store import (JD_COLLECTION, MIN_RELEVANCE, RESUME_COLLECTION, VectorStore, build_precomputed_context,
                               create_chroma_client, index_resume_snapshot)
 from app.schemas.resume import Education, Experience, Project, ResumeSchema, is_basic_info_complete
-from tests.fakes import HashEmbedder, ScriptedFactory
+from tests.fakes import HashEmbedder, ScriptedFactory, Truncated
 
 RESUME = ResumeSchema(
     name="김지원",
@@ -214,7 +214,16 @@ def test_sanitize_drops_hallucinated_name_but_keeps_legit_one():
 def test_build_input_applies_section_quotas_and_excludes_self_intro():
     sections = {"profile": "p" * 1000, "experience": "e" * 5000, "self_intro": "자소서 본문", "education": "학력"}
     text = build_input(sections)
-    assert "자소서" not in text and len(text) <= 3000 and text.count("e") <= 1100 + 20
+    assert "자소서" not in text and len(text) <= MAX_INPUT_CHARS and text.count("e") <= 1100 + 20
+
+
+def test_section_quotas_fit_the_total_limit_so_trailing_sections_are_never_sliced_off():
+    """합계가 전체 제한을 넘으면 마지막 `[:MAX_INPUT_CHARS]` 가 뒤쪽 섹션(프로젝트·기술·자격)을 말없이 잘라 낸다."""
+    full = {k: "x" * 5000 for k in SECTION_QUOTA}
+    text = build_input(full)
+    assert sum(SECTION_QUOTA.values()) <= MAX_INPUT_CHARS
+    for k in ("projects", "skills", "certifications"):
+        assert f"[{k}]" in text and text.split(f"[{k}]\n", 1)[1].split("\n\n[", 1)[0].count("x") == SECTION_QUOTA[k]
 
 
 def _resume_json(**kw) -> str:
@@ -246,3 +255,19 @@ async def test_extract_resume_falls_back_to_empty_resume_after_three_invalid_out
 async def test_extract_resume_treats_empty_but_schema_valid_output_as_failure(empty):
     res = await extract_resume(ScriptedFactory([empty]), {"profile": "김지원", "self_intro": "자소서"})
     assert res.fell_back and res.resume.self_intro == "자소서"
+
+
+async def test_truncated_llm_output_is_rejected_and_retried_instead_of_silently_losing_trailing_fields():
+    """출력 한도에 끊긴 JSON 을 파서가 조용히 닫아 주면 projects/skills/certifications 가 말없이 사라진다(실측 사고)."""
+    cut = Truncated(_resume_json(projects=[], skills=[], certifications=[]))
+    full = _resume_json(projects=[{"title": "주문 API"}], skills=["Java"])
+    llm = ScriptedFactory([cut, full])
+    res = await extract_resume(llm, {"profile": "김지원", "education": "한빛대학교", "experience": "(주)다온커머스 백엔드 개발자 Java 주문 API", "self_intro": "x"})
+    assert len(llm.calls) == 2 and not res.fell_back  # 끊긴 첫 응답은 버리고 다시 받았다
+    assert [p.title for p in res.resume.projects] == ["주문 API"] and res.resume.skills == ["Java"]
+
+
+async def test_always_truncated_output_falls_back_to_manual_entry_after_three_attempts():
+    llm = ScriptedFactory([Truncated(_resume_json()) for _ in range(3)])
+    res = await extract_resume(llm, {"profile": "김지원", "education": "한빛대학교", "self_intro": "자소서"})
+    assert res.fell_back and len(llm.calls) == 3  # 일부만 채워진 결과를 정상처럼 보여 주지 않고 직접 작성으로 안내

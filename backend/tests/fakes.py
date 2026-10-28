@@ -22,6 +22,10 @@ class Stall(str):
     """astream 에서 이 텍스트를 흘린 뒤 더 이상 진행하지 않는다(응답 중단·타임아웃 시나리오). ainvoke 에서는 일반 문자열."""
 
 
+class Truncated(str):
+    """출력 한도(done_reason=length)에 걸려 끊긴 응답. ainvoke/invoke 의 메타데이터에 done_reason 을 싣는다."""
+
+
 class ScriptedLLM(Runnable):
     """호출될 때마다 스크립트의 다음 항목을 소비한다. str 은 응답 본문, Exception 은 그대로 던진다.
 
@@ -39,13 +43,17 @@ class ScriptedLLM(Runnable):
             raise item
         return item
 
+    @staticmethod
+    def _msg(text: str) -> AIMessage:
+        return AIMessage(content=text, response_metadata={"done_reason": "length"} if isinstance(text, Truncated) else {})
+
     def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> AIMessage:  # noqa: A002
-        return AIMessage(content=self._next(input))
+        return self._msg(self._next(input))
 
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> AIMessage:  # noqa: A002
         if self.owner.delay:
             await asyncio.sleep(self.owner.delay)
-        return AIMessage(content=self._next(input))
+        return self._msg(self._next(input))
 
     async def astream(self, input: Any, config: Any = None, **kwargs: Any) -> AsyncIterator[AIMessageChunk]:  # noqa: A002
         text = self._next(input)

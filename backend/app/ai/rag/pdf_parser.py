@@ -157,7 +157,8 @@ def normalize_pages(pages: list[str]) -> str:
 SECTION_ALIASES = {
     "education": ["학력", "학력사항", "교육", "교육사항", "education"],
     "experience": ["경력", "경력사항", "근무경력", "직장경력", "experience", "work experience", "career"],
-    "projects": ["프로젝트", "프로젝트경험", "주요프로젝트", "project", "projects"],
+    "projects": ["프로젝트", "프로젝트경험", "프로젝트경력", "프로젝트이력", "프로젝트사항", "주요프로젝트", "개인프로젝트", "팀프로젝트", "수행프로젝트", "진행프로젝트",
+                 "프로젝트및활동", "project", "projects", "project experience", "personal projects", "side projects", "selected projects"],
     "skills": ["기술", "기술스택", "보유기술", "스킬", "skills", "skill", "tech stack"],
     "certifications": ["자격", "자격증", "자격사항", "certification", "certifications", "license"],
     "self_intro": ["자기소개", "자기소개서", "지원동기", "성장과정", "자소서", "summary", "profile", "cover letter"],

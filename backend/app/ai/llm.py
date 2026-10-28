@@ -40,3 +40,9 @@ def report_llm_factory(settings: Settings) -> Callable[[float], Runnable]:
     """리포트 워커용: 더 긴 컨텍스트/출력/타임아웃 (면접 중 질문 생성 설정과 분리)."""
     return lambda temperature: build_chat_ollama(settings, temperature, num_ctx=settings.report_num_ctx,
                                                  num_predict=settings.report_num_predict, timeout_s=settings.report_llm_timeout_s)
+
+
+def extract_llm_factory(settings: Settings) -> Callable[[float], Runnable]:
+    """이력서 구조화 추출용: 긴 JSON 을 끝까지 쓰도록 출력 한도와 대기 시간을 면접용(256토큰·8초)과 분리한다."""
+    return lambda temperature: build_chat_ollama(settings, temperature, num_predict=settings.resume_extract_num_predict,
+                                                 timeout_s=settings.resume_extract_timeout_s)

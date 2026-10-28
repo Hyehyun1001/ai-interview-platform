@@ -8,16 +8,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
+from langchain_core.exceptions import OutputParserException
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import Runnable
+from langchain_core.runnables import Runnable, RunnableLambda
 
 from app.ai.guardrail import GuardrailEventSink, generate_with_guardrail, normalize_compact
 from app.schemas.resume import ResumeSchema
 
-MAX_INPUT_CHARS = 3000  # num_ctx 4096 안에서 프롬프트+출력이 들어가도록 제한
-SECTION_QUOTA = {"profile": 300, "education": 400, "experience": 1100, "projects": 1100, "skills": 300, "certifications": 200}
+# 전체 제한은 섹션 할당량 합계 + 머리글·구분 여유다. 합계보다 작으면 마지막 슬라이스가 뒤쪽 섹션(프로젝트·기술·자격)을 말없이 잘라 낸다.
+# num_ctx 6144 안에 프롬프트(약 2.5k 토큰)+출력(resume_extract_num_predict, 1536)이 들어간다.
+SECTION_QUOTA = {"profile": 300, "education": 400, "experience": 1100, "projects": 1300, "skills": 300, "certifications": 200}
+MAX_INPUT_CHARS = sum(SECTION_QUOTA.values()) + 200
 
 SYSTEM = (
     "당신은 이력서 텍스트에서 정보를 추출하는 도구입니다.\n"
@@ -29,10 +33,17 @@ SYSTEM = (
 HUMAN = "<untrusted>\n{text}\n</untrusted>\n{retry_hint}"
 
 
+def _reject_truncated(msg: Any) -> Any:
+    """출력 한도(num_predict)에 걸려 중간에 끊긴 응답은 거부한다. 파서가 끊긴 JSON 을 조용히 닫아 주면 뒤쪽 항목(프로젝트·기술·자격)이 말없이 사라진다."""
+    if getattr(msg, "response_metadata", {}).get("done_reason") == "length":
+        raise OutputParserException("출력이 길이 한도에서 끊겼습니다. 항목을 간결하게 줄여 다시 출력하세요.")
+    return msg
+
+
 def build_extract_chain(llm: Runnable) -> Runnable:
     parser = PydanticOutputParser(pydantic_object=ResumeSchema)
     prompt = ChatPromptTemplate.from_messages([("system", SYSTEM), ("human", HUMAN)])
-    return prompt.partial(format_instructions=parser.get_format_instructions()) | llm | parser
+    return prompt.partial(format_instructions=parser.get_format_instructions()) | llm | RunnableLambda(_reject_truncated) | parser
 
 
 def build_input(sections: dict[str, str]) -> str:

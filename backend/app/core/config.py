@@ -45,14 +45,17 @@ class Settings(DatabaseSettings):
     ollama_model: str = "qwen2.5:7b-instruct-q4_K_M"
     ollama_keep_alive: str = "30m"
     llm_timeout_s: float = 8.0
-    llm_num_ctx: int = 4096
+    llm_num_ctx: int = 6144  # report_num_ctx 와 같게 둔다: Ollama 는 num_ctx 가 다르면 모델을 다시 로드한다(실측 +약 10초: 로드 2.4~3초 + 입력 재처리 4.8초)
     embed_model: str = "BAAI/bge-m3"
     embed_device: str = "mps"
     embed_keep_resident: Literal["auto", "true", "false"] = "auto"
     chroma_path: Path = REPO_ROOT / "data" / "chroma"
     media_root: Path = REPO_ROOT / "data" / "media"
     # ── 리포트 워커 (TRD §1.3, §3.4 report_chain) ──
-    report_num_ctx: int = 6144        # 면접 중 질문 생성(4096)보다 큰 컨텍스트 — 워커는 면접 중에는 멈추므로 모델 재로딩 비용이 면접 지연에 영향을 주지 않는다
+    # 이력서 구조화 추출: 출력 JSON(학력·경력·프로젝트·기술·자격)이 길어 면접용 num_predict(256)로는 중간에 잘린다(실측: 프로젝트 3개 중 1개, 기술·자격 0개)
+    resume_extract_num_predict: int = Field(default=1536, ge=256, le=4096)
+    resume_extract_timeout_s: float = 90.0  # 시도당 상한. 비스트리밍 호출이라 읽기 대기(HTTP)와 전체 대기 모두 이 값을 쓴다
+    report_num_ctx: int = 6144        # 면접(llm_num_ctx)과 같은 값을 유지해야 번갈아 쓸 때 모델 재로드가 생기지 않는다
     report_num_predict: int = 900     # 턴 평가 JSON(5항목 코멘트+근거)과 총평 JSON 이 256 토큰에는 들어가지 않는다
     report_llm_timeout_s: float = 150.0
     report_poll_interval_s: float = 3.0

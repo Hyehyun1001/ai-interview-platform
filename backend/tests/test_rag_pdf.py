@@ -163,6 +163,13 @@ def test_split_sections_recognizes_decorated_and_english_headers(header, key):
     assert "홍길동" in s["profile"]
 
 
+@pytest.mark.parametrize("header", ["프로젝트 경험", "프로젝트 경력", "프로젝트 이력", "개인 프로젝트", "팀 프로젝트", "수행 프로젝트", "PROJECT EXPERIENCE", "Personal Projects",
+                                    "Side Projects", "[ 프로젝트 및 활동 ]", "■ 주요 프로젝트"])
+def test_split_sections_recognizes_common_project_headings(header):
+    s = split_sections(f"홍길동\n경력\n회사 경력 내용\n{header}\n주문 API 개선 프로젝트\n기술\nJava\n")
+    assert s["projects"] == "주문 API 개선 프로젝트" and s["experience"] == "회사 경력 내용"  # 프로젝트가 경력 칸에 섞이지 않는다
+
+
 def test_split_sections_ignores_headers_inside_sentences_and_merges_repeats():
     s = split_sections("이름\n경력\n회사 A\n경력을 쌓기 위해 지원했습니다\n프로젝트\nP1\n경력\n회사 B\n")
     assert "경력을 쌓기 위해" in s["experience"]  # 문장 속 단어는 헤더가 아니다

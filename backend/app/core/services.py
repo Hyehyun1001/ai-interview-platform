@@ -19,6 +19,7 @@ class Services:
     llm_factory: Callable[[float], Runnable]
     # 지연 생성: bge-m3 의존성(sentence-transformers)이 없거나 로드에 실패하면 None → 이력서 검색 없이 JD 기반 질문으로 진행 (TRD §3.3)
     vector_store_factory: Callable[[], Any | None]
+    extract_llm_factory: Callable[[float], Runnable] | None = None  # 이력서 추출용(긴 출력). None 이면 llm_factory 를 쓴다(테스트)
     report_llm_factory: Callable[[float], Runnable] | None = None  # 리포트용(긴 컨텍스트). None 이면 report_llm_factory(settings)
     mailer: Any = None  # app.services.mailer.Mailer. None 이면 설정(SMTP_HOST)으로 생성
     sandbox: Any = None  # app.coding.judge.Sandbox. None + SANDBOX_ENABLED=false 이면 코딩테스트 API 는 503 SANDBOX_DISABLED
@@ -65,8 +66,8 @@ def _default_sandbox(settings: Settings) -> Any:
 
 
 def build_default_services(settings: Settings) -> Services:
-    from app.ai.llm import llm_factory, report_llm_factory
+    from app.ai.llm import extract_llm_factory, llm_factory, report_llm_factory
     from app.services.mailer import SmtpMailer
 
     return Services(llm_factory=llm_factory(settings), vector_store_factory=lambda: default_vector_store(settings),
-                    report_llm_factory=report_llm_factory(settings), mailer=SmtpMailer(settings), sandbox=_default_sandbox(settings))
+                    report_llm_factory=report_llm_factory(settings), extract_llm_factory=extract_llm_factory(settings), mailer=SmtpMailer(settings), sandbox=_default_sandbox(settings))
