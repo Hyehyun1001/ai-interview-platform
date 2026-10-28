@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { Modal } from "@/components/ui/modal";
+import { JobBody, type JobView } from "@/features/jobs/job-view";
+import { EMPLOYMENT_OPTIONS } from "@/features/jobs/logic";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -81,26 +83,82 @@ function Field({ label, children, hint }: { label: string; children: React.React
   return <label className="block text-sm"><span className="mb-1 block font-medium">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}</label>;
 }
 
+const CATEGORIES = ["개발", "디자인", "기획", "마케팅", "영업", "경영지원"];
+const LIST_HINT = "한 줄에 한 항목씩 적으면 지원자 화면에 목록으로 보여요. 줄 앞의 - 는 있어도 없어도 됩니다.";
+
+/** 글자 수를 보여 주는 여러 줄 입력. 줄 단위 목록 입력 안내를 함께 둔다. */
+function Area({ label, hint, value, onChange, disabled, max, rows = 5, badge, testId }: {
+  label: string; hint?: string; value: string; onChange: (v: string) => void; disabled: boolean; max: number; rows?: number; badge?: React.ReactNode; testId?: string;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 flex items-center gap-2 font-medium">{label}{badge}</span>
+      <textarea className={cn(input, "h-auto min-h-[5rem] py-2 leading-relaxed")} rows={rows} value={value} maxLength={max} disabled={disabled} data-testid={testId} onChange={(e) => onChange(e.target.value)} />
+      <span className="mt-1 flex justify-between gap-2 text-xs text-muted"><span>{hint ?? LIST_HINT}</span><span className="shrink-0 tabular-nums">{value.length}/{max}</span></span>
+    </label>
+  );
+}
+const AI_BADGE = <span className="rounded bg-info-bg px-1.5 py-0.5 text-[11px] font-normal text-info" title="이 항목은 AI 면접 질문을 만드는 근거(JD)로 쓰여요">AI 질문 근거</span>;
+const VIEW_BADGE = <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-normal text-muted" title="지원자 화면에만 표시되고 AI 질문 생성에는 쓰이지 않아요">표시용</span>;
+
 function Step1({ job, disabled, saving, onSave }: { job?: JobOut; disabled: boolean; saving: boolean; onSave: (b: Record<string, unknown>) => Promise<void> }) {
   const [f, setF] = useState({ title: job?.title ?? "", job_category: job?.job_category ?? "", headcount: job?.headcount ?? ("" as number | ""), deadline: toLocal(job?.deadline_at),
-    duties: job?.duties ?? "", requirements: job?.requirements ?? "", preferred: job?.preferred ?? "", contact_email: job?.contact_email ?? "" });
+    duties: job?.duties ?? "", requirements: job?.requirements ?? "", preferred: job?.preferred ?? "", contact_email: job?.contact_email ?? "",
+    employment_type: job?.employment_type ?? "", work_location: job?.work_location ?? "", salary_text: job?.salary_text ?? "", benefits: job?.benefits ?? "", notice: job?.notice ?? "" });
+  const [showPreview, setShowPreview] = useState(false);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
+  const text = (k: keyof typeof f) => (v: string) => setF({ ...f, [k]: v });
   const past = f.deadline !== "" && new Date(f.deadline).getTime() <= Date.now();
+  const view: JobView = {
+    title: f.title, company: null, category: f.job_category || null, deadline: f.deadline ? new Date(f.deadline).toISOString() : null, headcount: f.headcount === "" ? null : Number(f.headcount),
+    duties: f.duties, requirements: f.requirements, preferred: f.preferred, contactEmail: f.contact_email || null, answerLimitSec: job?.answer_time_limit_sec ?? null,
+    questionCount: job ? Math.min(10, job.questions.length + job.bank_count) || null : null, maxFollowups: job?.followup_rules.max_followups ?? null,
+    codingEnabled: job?.coding_test_enabled ?? false, codingLimitSec: job?.coding_test_time_limit_sec ?? null,
+    workLocation: f.work_location, employmentType: f.employment_type || null, salaryText: f.salary_text, benefits: f.benefits, notice: f.notice,
+  };
   return (
-    <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (!f.title.trim()) { toast.error("공고 제목을 입력해 주세요"); return; }
+    <form className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_25rem]" onSubmit={(e) => { e.preventDefault(); if (!f.title.trim()) { toast.error("공고 제목을 입력해 주세요"); return; }
       void onSave({ title: f.title.trim(), job_category: f.job_category || null, headcount: f.headcount === "" ? null : Number(f.headcount), deadline_at: f.deadline ? new Date(f.deadline).toISOString() : null,
-        duties: f.duties || null, requirements: f.requirements || null, preferred: f.preferred || null, contact_email: f.contact_email || null }); }}>
-      <Field label="공고 제목 *"><input className={input} value={f.title} onChange={set("title")} disabled={disabled} maxLength={200} /></Field>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="직무 카테고리 *"><select className={input} value={f.job_category} onChange={set("job_category")} disabled={disabled}><option value="">선택</option>{["개발", "디자인", "기획", "마케팅", "영업", "경영지원"].map((c) => <option key={c}>{c}</option>)}</select></Field>
-        <Field label="모집 정원 *"><input className={input} type="number" min={1} value={f.headcount} onChange={set("headcount")} disabled={disabled} /></Field>
-        <Field label="마감일 *"><input className={input} type="datetime-local" value={f.deadline} onChange={set("deadline")} disabled={disabled} aria-invalid={past} />{past && <span role="alert" className="text-xs text-danger">마감일은 미래여야 해요</span>}</Field>
+        duties: f.duties || null, requirements: f.requirements || null, preferred: f.preferred || null, contact_email: f.contact_email || null,
+        employment_type: f.employment_type || null, work_location: f.work_location.trim() || null, salary_text: f.salary_text.trim() || null, benefits: f.benefits || null, notice: f.notice || null }); }}>
+      <div className="min-w-0 space-y-6">
+        <fieldset className="space-y-4">
+          <legend className="mb-1 text-base font-bold">기본 정보</legend>
+          <Field label="공고 제목 *" hint="공고명에는 '코딩테스트 포함' 같은 안내를 넣지 않아도 돼요. 코딩테스트 여부는 2단계 설정이 지원자 화면에 자동으로 표시됩니다."><input className={input} value={f.title} onChange={set("title")} disabled={disabled} maxLength={200} /></Field>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="직무 카테고리 *"><select className={input} value={f.job_category} onChange={set("job_category")} disabled={disabled}><option value="">선택</option>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select></Field>
+            <Field label="모집 정원 *"><input className={input} type="number" min={1} value={f.headcount} onChange={set("headcount")} disabled={disabled} /></Field>
+            <Field label="마감일 *"><input className={input} type="datetime-local" value={f.deadline} onChange={set("deadline")} disabled={disabled} aria-invalid={past} />{past && <span role="alert" className="text-xs text-danger">마감일은 미래여야 해요</span>}</Field>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="고용 형태"><select className={input} value={f.employment_type} onChange={set("employment_type")} disabled={disabled} data-testid="employment-type"><option value="">선택 안 함</option>{EMPLOYMENT_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+            <Field label="근무지"><input className={input} value={f.work_location} onChange={set("work_location")} disabled={disabled} maxLength={200} placeholder="예: 서울 강남구 (본사)" data-testid="work-location" /></Field>
+            <Field label="급여" hint="자유롭게 적어요. 예: 회사 내규에 따름 / 면접 후 협의"><input className={input} value={f.salary_text} onChange={set("salary_text")} disabled={disabled} maxLength={100} data-testid="salary-text" /></Field>
+            <Field label="담당자 문의 이메일"><input className={input} type="email" value={f.contact_email} onChange={set("contact_email")} disabled={disabled} /></Field>
+          </div>
+        </fieldset>
+
+        <fieldset className="space-y-4">
+          <legend className="mb-1 text-base font-bold">공고 내용</legend>
+          <Area label="주요 업무 *" badge={AI_BADGE} value={f.duties} onChange={text("duties")} disabled={disabled} max={5000} rows={5} />
+          <Area label="지원 요건 *" badge={AI_BADGE} value={f.requirements} onChange={text("requirements")} disabled={disabled} max={5000} rows={5} />
+          <Area label="우대 사항" badge={AI_BADGE} value={f.preferred} onChange={text("preferred")} disabled={disabled} max={5000} rows={4} />
+          <Area label="복리후생" badge={VIEW_BADGE} value={f.benefits} onChange={text("benefits")} disabled={disabled} max={3000} rows={4} testId="benefits" />
+          <Area label="전형 안내 · 유의 사항" badge={VIEW_BADGE} value={f.notice} onChange={text("notice")} disabled={disabled} max={3000} rows={4} testId="notice"
+            hint="지원 전에 알아야 할 안내를 적어요. 예: 서류 합격자에게 개별 연락드립니다." />
+        </fieldset>
+        <div className="flex items-center justify-between gap-3">
+          <Button type="button" variant="secondary" className="xl:hidden" onClick={() => setShowPreview((v) => !v)} aria-expanded={showPreview} data-testid="preview-toggle">{showPreview ? "미리보기 닫기" : "지원자 화면 미리보기"}</Button>
+          <Button type="submit" loading={saving} disabled={disabled} className="ml-auto">저장하고 다음 ›</Button>
+        </div>
       </div>
-      <Field label="주요 업무 *" hint="주요 업무·지원 요건은 AI 질문 생성의 근거(JD)로 사용됩니다."><textarea className={cn(input, "h-28 py-2")} value={f.duties} onChange={set("duties")} disabled={disabled} /></Field>
-      <Field label="지원 요건 *"><textarea className={cn(input, "h-28 py-2")} value={f.requirements} onChange={set("requirements")} disabled={disabled} /></Field>
-      <Field label="우대 사항"><textarea className={cn(input, "h-20 py-2")} value={f.preferred} onChange={set("preferred")} disabled={disabled} /></Field>
-      <Field label="담당자 문의 이메일"><input className={input} type="email" value={f.contact_email} onChange={set("contact_email")} disabled={disabled} /></Field>
-      <div className="flex justify-end"><Button type="submit" loading={saving} disabled={disabled}>저장하고 다음 ›</Button></div>
+
+      <aside className={cn("min-w-0 xl:block", showPreview ? "block" : "hidden")} aria-label="지원자 화면 미리보기" data-testid="live-preview">
+        <div className="xl:sticky xl:top-20">
+          <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">지원자 화면 미리보기</h3><span className="text-xs text-muted">입력하는 대로 바뀌어요 (저장 전)</span></div>
+          <div className="max-h-[calc(100vh-9rem)] overflow-y-auto rounded-lg border border-border bg-bg p-4"><JobBody job={view} compact action={<Button disabled className="w-full" type="button">지원하기 / AI 면접 진행</Button>} /></div>
+        </div>
+      </aside>
     </form>
   );
 }

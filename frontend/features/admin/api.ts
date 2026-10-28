@@ -37,7 +37,7 @@ export type DecisionIn = S["DecisionIn"];
 const J = (method: string, json?: unknown) => ({ method, ...(json !== undefined ? { json } : {}) });
 
 export const jobKeys = { list: ["admin", "jobs"] as const, one: (id: string) => ["admin", "job", id] as const, bank: (id: string) => ["admin", "bank", id] as const };
-export const listJobs = () => apiFetch<JobListOut>("/api/v1/admin/jobs?limit=50");
+export const listJobs = () => apiFetch<JobListOut>("/api/v1/admin/jobs?limit=100");  // 탭별 개수는 이 목록으로 센다(최대 100건)
 export const createJob = (body: JobWrite) => apiFetch<JobOut>("/api/v1/admin/jobs", J("POST", body));
 export const getJob = (id: string) => apiFetch<JobOut>(`/api/v1/admin/jobs/${id}`);
 export const updateJob = (id: string, body: JobWrite) => apiFetch<JobOut>(`/api/v1/admin/jobs/${id}`, J("PUT", body));
@@ -47,6 +47,7 @@ export const putFollowup = (id: string, body: FollowupRules) => apiFetch<Followu
 export const generateBank = (id: string) => apiFetch<{ status: string }>(`/api/v1/admin/jobs/${id}/question-bank/generate`, J("POST"));
 export const getBank = (id: string) => apiFetch<BankOut>(`/api/v1/admin/jobs/${id}/question-bank`);
 export const publishJob = (id: string) => apiFetch<JobOut>(`/api/v1/admin/jobs/${id}/publish`, J("POST"));
+export const deleteJob = (id: string) => apiFetch<void>(`/api/v1/admin/jobs/${id}`, J("DELETE"));
 export const closeJob = (id: string) => apiFetch<JobOut>(`/api/v1/admin/jobs/${id}/close`, J("POST"));
 export const fetchCompare = (ids: string[]) => apiFetch<CompareResponse>(`/api/v1/admin/applicants/compare?ids=${ids.join(",")}`);
 export const decide = (id: string, body: DecisionIn) => apiFetch<S["DecisionOut"]>(`/api/v1/admin/applications/${id}/decision`, J("POST", body));

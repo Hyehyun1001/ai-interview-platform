@@ -137,7 +137,7 @@ test("지원자 목록: 통합 목록의 정렬·필터·비교 모드, 공고�
 
   // 공고별 목록: 그 공고의 지원자만, 공고 열은 숨김
   await page.goto("/admin/jobs");
-  await page.getByRole("row", { name: /백엔드 개발자/ }).getByRole("link", { name: /명 보기/ }).click();
+  await page.getByTestId("job-card-admin").filter({ hasText: "백엔드 개발자" }).getByRole("link", { name: "지원자", exact: true }).click();
   await expect(page).toHaveURL(/\/admin\/jobs\/[^/]+\/applicants/);
   await expect(page.getByTestId("applicants-title")).toContainText("백엔드 개발자");
   await expect(page.getByTestId("applicant-table")).toContainText("이도윤");
