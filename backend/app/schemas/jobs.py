@@ -32,6 +32,15 @@ class JobDetail(JobSummary):
     requirements: str | None = None
     preferred: str | None = None
     answer_time_limit_sec: int | None = None
+    coding_test_time_limit_sec: int | None = None  # 코딩테스트가 있는 공고의 전체 제한시간
+    contact_email: str | None = None  # 담당자 문의 이메일(표기만)
+    work_location: str | None = None
+    employment_type: str | None = None
+    salary_text: str | None = None
+    benefits: str | None = None
+    notice: str | None = None
+    interview_question_count: int | None = None  # 면접 메인 질문 수 (서버 설정 INTERVIEW_MAIN_COUNT, 질문 풀이 모자라면 더 적을 수 있다)
+    max_followups: int | None = None  # 질문당 꼬리질문 최대 횟수 (공고의 꼬리질문 규칙)
     application_id: uuid.UUID | None = None
 
 

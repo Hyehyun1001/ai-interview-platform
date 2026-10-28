@@ -36,6 +36,12 @@ class JobPosting(IdMixin, TimestampMixin, Base):
     coding_test_time_limit_sec: Mapped[int | None] = mapped_column(Integer)
     answer_time_limit_sec: Mapped[int | None] = mapped_column(Integer)  # 기본 답변 제한 (질문별 override 가능)
     contact_email: Mapped[str | None] = mapped_column(String(255))
+    # 지원자 공고 상세에 보이는 표기용 정보 (AI 질문 생성의 JD 인덱싱 대상이 아니다)
+    work_location: Mapped[str | None] = mapped_column(String(200))
+    employment_type: Mapped[str | None] = mapped_column(String(20))  # regular | contract | intern | parttime
+    salary_text: Mapped[str | None] = mapped_column(String(100))  # 자유 입력 ("회사 내규에 따름" 등)
+    benefits: Mapped[str | None] = mapped_column(Text)
+    notice: Mapped[str | None] = mapped_column(Text)  # 전형 안내·유의 사항
     view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_template: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     template_name: Mapped[str | None] = mapped_column(String(100))

@@ -26,6 +26,11 @@ class JobWrite(_Strict):
     requirements: str | None = Field(default=None, max_length=5000)
     preferred: str | None = Field(default=None, max_length=5000)
     contact_email: str | None = Field(default=None, max_length=255, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    work_location: str | None = Field(default=None, max_length=200)
+    employment_type: Literal["regular", "contract", "intern", "parttime"] | None = None
+    salary_text: str | None = Field(default=None, max_length=100)
+    benefits: str | None = Field(default=None, max_length=3000)
+    notice: str | None = Field(default=None, max_length=3000)
     answer_time_limit_sec: int | None = Field(default=None, ge=30, le=600)
     coding_test_enabled: bool | None = None
     coding_test_time_limit_sec: int | None = Field(default=None, ge=300, le=14_400)
@@ -93,6 +98,11 @@ class JobOut(BaseModel):
     requirements: str | None
     preferred: str | None
     contact_email: str | None
+    work_location: str | None
+    employment_type: str | None
+    salary_text: str | None
+    benefits: str | None
+    notice: str | None
     answer_time_limit_sec: int | None
     coding_test_enabled: bool
     coding_test_time_limit_sec: int | None
@@ -113,6 +123,7 @@ class JobListItem(BaseModel):
     deadline_at: datetime | None
     applicant_count: int
     unreviewed_count: int
+    view_count: int = 0
     coding_test_enabled: bool
     updated_at: datetime
 

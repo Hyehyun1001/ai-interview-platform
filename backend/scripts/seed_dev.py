@@ -51,7 +51,9 @@ async def seed(url: str, media_root: Path, *, demo_admin: bool = False, manual_q
         applicant = User(email="applicant@corp.local", password_hash=hash_password(PASSWORD), role=UserRole.APPLICANT, name="김지원")
         s.add_all([hr, applicant])
         job = JobPosting(company_id=co.id, title="백엔드 개발자 (신입)", job_category="개발", status=JobStatus.OPEN, deadline_at=utcnow() + timedelta(days=5),
-                         duties="주문·결제 API 설계와 개발, 성능 개선", requirements="Java 또는 Kotlin, RDBMS, 캐시(Redis) 사용 경험", preferred="대용량 트래픽 경험",
+                         duties="- 주문·결제 API 설계와 개발\n- 조회 성능 개선과 캐시(Redis) 설계\n- 장애 대응과 모니터링 체계 개선",
+                         requirements="- Java 또는 Kotlin 기반 서버 개발 경험(프로젝트 포함)\n- RDBMS(MySQL 등)와 SQL 이해\n- Git 으로 협업해 본 경험",
+                         preferred="- 대용량 트래픽 처리 경험\n- Redis 등 캐시 사용 경험\n- 테스트 코드 작성 경험", contact_email="hr@corp.local",
                          headcount=2, answer_time_limit_sec=60, coding_test_enabled=False)
         s.add(job)
         await s.flush()
@@ -59,8 +61,9 @@ async def seed(url: str, media_root: Path, *, demo_admin: bool = False, manual_q
         s.add_all([JobQuestion(job_id=job.id, source=QuestionSource.MANUAL, text=q, order_no=i + 1) for i, q in enumerate(QUESTIONS[:manual_questions])])
         out.update(company_id=str(co.id), job_id=str(job.id), applicant_id=str(applicant.id), recruiter_id=str(hr.id))
         if coding_job:  # 코딩테스트 E2E 용: 코딩테스트가 켜진 공고 (SANDBOX_ENABLED 스택에서만 의미가 있다)
-            cj = JobPosting(company_id=co.id, title="알고리즘 엔지니어 (코딩테스트 포함)", job_category="개발", status=JobStatus.OPEN, deadline_at=utcnow() + timedelta(days=6),
-                            duties="알고리즘 설계와 구현", requirements="Python 또는 Java, 자료구조", headcount=1, answer_time_limit_sec=60,
+            cj = JobPosting(company_id=co.id, title="알고리즘 엔지니어", job_category="개발", status=JobStatus.OPEN, deadline_at=utcnow() + timedelta(days=6),
+                            duties="- 추천·검색 로직의 알고리즘 설계와 구현\n- 대량 데이터 처리 파이프라인 최적화", requirements="- Python 또는 Java 로 알고리즘 문제를 풀 수 있는 역량\n- 자료구조·시간 복잡도에 대한 이해",
+                            preferred="- 알고리즘 대회·코딩 테스트 경험", contact_email="hr@corp.local", headcount=1, answer_time_limit_sec=60,
                             coding_test_enabled=True, coding_test_time_limit_sec=1800)
             s.add(cj)
             await s.flush()

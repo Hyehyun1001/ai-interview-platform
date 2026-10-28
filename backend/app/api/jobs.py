@@ -9,9 +9,10 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_db, require_role
+from app.core.config import Settings
+from app.core.deps import get_db, get_settings_dep, require_role
 from app.core.errors import ApiError
-from app.models import Application, Company, EvaluationReport, InterviewSession, JobPosting, Notification, User
+from app.models import Application, Company, EvaluationReport, FollowupRule, InterviewSession, JobPosting, Notification, User
 from app.models.base import utcnow
 from app.models.enums import FinalDecision, JobStatus, UserRole
 from app.schemas.jobs import ApplyRequest, ApplyResponse, JobDetail, JobList, JobSummary, MyApplication, MyJobRef
@@ -50,7 +51,8 @@ async def list_jobs(category: str | None = None, q: str | None = Query(default=N
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetail)
-async def get_job(job_id: uuid.UUID, user: User = Depends(require_role(UserRole.APPLICANT)), db: AsyncSession = Depends(get_db)) -> JobDetail:
+async def get_job(job_id: uuid.UUID, user: User = Depends(require_role(UserRole.APPLICANT)), db: AsyncSession = Depends(get_db),
+                  settings: Settings = Depends(get_settings_dep)) -> JobDetail:
     row = (await db.execute(select(JobPosting, Company.name).join(Company, Company.id == JobPosting.company_id)
                             .where(JobPosting.id == job_id, JobPosting.status.in_([JobStatus.OPEN, JobStatus.CLOSED])))).first()
     if row is None:
@@ -59,9 +61,13 @@ async def get_job(job_id: uuid.UUID, user: User = Depends(require_role(UserRole.
     await db.execute(update(JobPosting).where(JobPosting.id == job.id).values(view_count=JobPosting.view_count + 1, updated_at=JobPosting.updated_at))  # 조회수는 담당자의 편집 기준(updated_at)을 바꾸지 않는다
     app_id = (await db.execute(select(Application.id).where(Application.user_id == user.id, Application.job_id == job.id))).scalar_one_or_none()
     await db.commit()
+    rules = (await db.execute(select(FollowupRule).where(FollowupRule.job_id == job.id))).scalar_one_or_none()
     base = _summary(job, company, app_id is not None)
     return JobDetail(**base.model_dump(), duties=job.duties, requirements=job.requirements, preferred=job.preferred,
-                     answer_time_limit_sec=job.answer_time_limit_sec, application_id=app_id)
+                     answer_time_limit_sec=job.answer_time_limit_sec, coding_test_time_limit_sec=job.coding_test_time_limit_sec if job.coding_test_enabled else None,
+                     contact_email=job.contact_email, work_location=job.work_location, employment_type=job.employment_type, salary_text=job.salary_text,
+                     benefits=job.benefits, notice=job.notice, interview_question_count=settings.interview_main_count,
+                     max_followups=rules.max_followups if rules else 2, application_id=app_id)
 
 
 @router.post("/jobs/{job_id}/apply", response_model=ApplyResponse, status_code=201)

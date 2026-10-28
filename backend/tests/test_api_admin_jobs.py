@@ -391,3 +391,29 @@ async def test_template_cannot_overwrite_published_job(rest):
         live = await rest.job(co.id, "게시 중")
         r = await c.post(f"{API}/admin/jobs/{live.id}/from-template/{t['id']}")
         assert r.status_code == 409 and r.json()["error"]["code"] == "JOB_NOT_DRAFT"
+
+
+async def test_display_fields_roundtrip_validation_template_copy_and_applicant_view(rest):
+    extra = {"work_location": "서울 강남구 테헤란로 (본사)", "employment_type": "regular", "salary_text": "회사 내규에 따름", "benefits": "- 4대 보험\n- 점심 제공", "notice": "- 서류 합격자에게 개별 안내"}
+    async with rest.client() as c:
+        co, _hr = await staff(rest, c)
+        j = (await c.post(f"{API}/admin/jobs", json={**FULL, **extra})).json()
+        for k, v in extra.items():
+            assert j[k] == v, k
+        # 일부만 보내면 나머지는 유지되고, 빈 값(null)으로 지울 수 있다
+        up = (await c.put(f"{API}/admin/jobs/{j['id']}", json={"salary_text": None})).json()
+        assert up["salary_text"] is None and up["work_location"] == extra["work_location"]
+        assert (await c.put(f"{API}/admin/jobs/{j['id']}", json={"employment_type": "freelancer"})).status_code == 422   # 허용 목록 밖
+        assert (await c.put(f"{API}/admin/jobs/{j['id']}", json={"benefits": "x" * 3001})).status_code == 422
+        # 템플릿으로 저장 → 새 공고에 그대로 복사된다
+        t = (await c.post(f"{API}/admin/job-templates", json={"job_id": j["id"], "name": "표기 정보 포함"})).json()
+        new = (await c.post(f"{API}/admin/jobs", json={"title": "복사 대상"})).json()
+        applied = (await c.post(f"{API}/admin/jobs/{new['id']}/from-template/{t['id']}")).json()
+        assert applied["work_location"] == extra["work_location"] and applied["benefits"] == extra["benefits"] and applied["employment_type"] == "regular"
+    # 지원자 상세에도 노출된다 (공개된 공고 기준)
+    await rest.applicant()
+    live = await rest.job(co.id, "공개 공고", work_location="판교", employment_type="intern", benefits="- 식대", notice="- 안내", salary_text="면접 후 협의")
+    async with rest.client() as a:
+        await rest.login(a, "a@corp.local")
+        d = (await a.get(f"{API}/jobs/{live.id}")).json()
+        assert (d["work_location"], d["employment_type"], d["benefits"], d["notice"], d["salary_text"]) == ("판교", "intern", "- 식대", "- 안내", "면접 후 협의")

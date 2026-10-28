@@ -64,6 +64,7 @@ async def _full(db: AsyncSession, job: JobPosting) -> JobOut:
     return JobOut(
         id=job.id, status=job.status, title=job.title, job_category=job.job_category, industry=job.industry, headcount=job.headcount,
         deadline_at=job.deadline_at, duties=job.duties, requirements=job.requirements, preferred=job.preferred, contact_email=job.contact_email,
+        work_location=job.work_location, employment_type=job.employment_type, salary_text=job.salary_text, benefits=job.benefits, notice=job.notice,
         answer_time_limit_sec=job.answer_time_limit_sec, coding_test_enabled=job.coding_test_enabled,
         coding_test_time_limit_sec=job.coding_test_time_limit_sec, updated_at=job.updated_at,
         weights=WeightsOut(weights=Weights(**{k: getattr(w, k) for k in WEIGHT_KEYS}), gaze_penalty_enabled=w.gaze_penalty_enabled,
@@ -91,7 +92,7 @@ async def list_jobs(status: JobStatus | None = None, page: int = Query(1, ge=1),
         n = (await db.execute(select(func.count()).select_from(Application).where(Application.job_id == j.id))).scalar_one()
         u = (await db.execute(select(func.count()).select_from(Application).where(Application.job_id == j.id, *UNREVIEWED))).scalar_one()
         items.append(JobListItem(id=j.id, title=j.title, status=j.status, job_category=j.job_category, deadline_at=j.deadline_at, applicant_count=n,
-                                 unreviewed_count=u, coding_test_enabled=j.coding_test_enabled, updated_at=j.updated_at))
+                                 unreviewed_count=u, view_count=j.view_count, coding_test_enabled=j.coding_test_enabled, updated_at=j.updated_at))
     return JobListOut(items=items, page=page, limit=limit, total=total)
 
 
@@ -296,7 +297,7 @@ async def close_job(job_id: uuid.UUID, user: User = Depends(Staff), db: AsyncSes
 # ── 템플릿 (is_template 행) ──────────────────────────────────────────────────
 # 템플릿은 job_postings 의 한 행(is_template=true, template_name)으로 저장한다 (TRD §6.2). 어떤 공고 조회에도 섞이지 않도록 status=deleted 로 둔다
 # (list_jobs·대시보드·지원자 목록·공개 목록은 모두 deleted 를 제외한다). 지원자·조회수·마감일·상태는 복사하지 않는다.
-COPY_FIELDS = ("title", "job_category", "industry", "duties", "requirements", "preferred", "contact_email", "answer_time_limit_sec",
+COPY_FIELDS = ("title", "job_category", "industry", "duties", "requirements", "preferred", "contact_email", "work_location", "employment_type", "salary_text", "benefits", "notice", "answer_time_limit_sec",
                "coding_test_enabled", "coding_test_time_limit_sec", "cutoff_score", "cutoff_margin")
 
 

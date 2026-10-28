@@ -56,6 +56,11 @@ async def test_jobs_list_detail_apply_flow(rest):
         d = (await c.get(f"{API}/jobs/{open_job.id}")).json()
         assert d["duties"] and d["application_id"] is None
         assert "cutoff_score" not in json.dumps(d)  # 내부 설정 비노출
+        # 공고 상세 안내용 필드: 코딩테스트가 없으면 제한시간은 null, 질문 수·꼬리질문 횟수(기본값)·문의 메일이 내려간다
+        assert d["coding_test_time_limit_sec"] is None and d["interview_question_count"] == 10 and d["max_followups"] == 2 and d["contact_email"] is None
+        coding = await rest.job(co.id, "코테 공고", coding_test_enabled=True, coding_test_time_limit_sec=3600, contact_email="hr@corp.local")
+        cd = (await c.get(f"{API}/jobs/{coding.id}")).json()
+        assert cd["coding_test_enabled"] is True and cd["coding_test_time_limit_sec"] == 3600 and cd["contact_email"] == "hr@corp.local"
         assert (await c.get(f"{API}/jobs/{uuid.uuid4()}")).status_code == 404
 
         assert (await c.post(f"{API}/jobs/{open_job.id}/apply", json={"consent": False, "consent_version": "v1"})).json()["error"]["code"] == "CONSENT_REQUIRED"
