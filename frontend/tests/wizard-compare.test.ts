@@ -41,7 +41,7 @@ describe("forbidden question warning", () => {
 type Job = components["schemas"]["JobOut"];
 const job = (over: Partial<Job> = {}): Job => ({
   id: "j", status: "draft", title: "t", job_category: "개발", industry: null, headcount: 2, deadline_at: new Date(Date.now() + 86_400_000).toISOString(), duties: "d", requirements: "r",
-  preferred: null, contact_email: null, answer_time_limit_sec: 120, coding_test_enabled: false, coding_test_time_limit_sec: null, updated_at: "x",
+  preferred: null, contact_email: null, work_location: null, employment_type: null, salary_text: null, benefits: null, notice: null, answer_time_limit_sec: 120, coding_test_enabled: false, coding_test_time_limit_sec: null, updated_at: "x",
   weights: { weights: DEFAULT_WEIGHTS, gaze_penalty_enabled: false, cutoff_score: null, cutoff_margin: 5 },
   followup_rules: { max_followups: 2, trigger_ambiguous: true, trigger_contradiction: true, trigger_stt_unclear: true, guardrail_strict: true },
   questions: [], question_bank_status: "none", bank_count: 0, applicant_count: 0, ...over,

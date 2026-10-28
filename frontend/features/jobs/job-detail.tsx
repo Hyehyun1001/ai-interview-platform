@@ -1,23 +1,17 @@
 "use client";
-import { ArrowLeft, Lock } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Badge, Button, Card, ErrorState, Skeleton } from "@/components/ui/primitives";
+import { JobBody } from "./job-view";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 import { ddayLabel } from "@/lib/utils";
 import { MY_APPS_KEY, applyToJob, fetchMyApplications, useJob, useMyApplications, type JobDetail } from "@/features/applicant/api";
 import { ConsentDialog } from "./consent-dialog";
-import { DDayBadge } from "./job-list";
-import { CONSENT_VERSION, continueTarget, formatDeadline, isDeadlinePassed } from "./logic";
-
-function Section({ title, body }: { title: string; body?: string | null }) {
-  if (!body?.trim()) return null;
-  // 담당자가 입력한 텍스트이므로 HTML 로 해석하지 않고 줄바꿈만 보존한다 (XSS 방지)
-  return <section className="space-y-1"><h2 className="font-bold">■ {title}</h2><p className="whitespace-pre-line text-sm leading-relaxed">{body}</p></section>;
-}
+import { CONSENT_VERSION, continueTarget, isDeadlinePassed } from "./logic";
 
 /** APP-03 공고 상세 + 지원 CTA + 동의 모달 (UI_SPEC §4.2.2). */
 export function JobDetailView({ jobId }: { jobId: string }) {
@@ -69,39 +63,24 @@ function Loaded({ job }: { job: JobDetail }) {
     } finally { setBusy(false); }
   }
 
+  const full = "w-full";
   const cta = myApp
-    ? <Button onClick={() => router.push(continueTarget(myApp).href)} className="w-full sm:w-auto">{continueTarget(myApp).label}</Button>
+    ? <Button onClick={() => router.push(continueTarget(myApp).href)} className={full}>{continueTarget(myApp).label}</Button>
     : closed
-      ? <Button disabled className="w-full sm:w-auto">모집이 마감되었습니다</Button>
-      : <Button onClick={() => { setErr(null); setOpen(true); }} className="w-full sm:w-auto" data-testid="apply-btn">지원하기 / AI 면접 진행</Button>;
+      ? <Button disabled className={full}>모집이 마감되었습니다</Button>
+      : <Button onClick={() => { setErr(null); setOpen(true); }} className={full} data-testid="apply-btn">지원하기 / AI 면접 진행</Button>;
 
   return (
-    <article className="space-y-6">
+    <div className="space-y-4">
       <Link href="/jobs" className="inline-flex items-center gap-1 text-sm text-muted hover:text-text"><ArrowLeft className="h-4 w-4" aria-hidden />공고 목록</Link>
-      <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          {job.job_category && <Badge tone="info">{job.job_category}</Badge>}
-          <DDayBadge deadline={job.deadline_at} />
-          <span className="text-sm text-muted">{formatDeadline(job.deadline_at)}</span>
-          {myApp?.result && <Badge tone={myApp.result === "pass" ? "success" : "neutral"}>{myApp.result === "pass" ? "합격" : "불합격"}</Badge>}
-        </div>
-        <h1 className="text-2xl font-bold">{job.title}</h1>
-        <p className="text-sm text-muted">
-          {job.company_name}{job.headcount ? ` · 정원 ${job.headcount}명` : ""}
-          {job.coding_test_enabled ? " · 코딩테스트 포함" : ""}{job.answer_time_limit_sec ? ` · 질문당 답변 ${job.answer_time_limit_sec}초` : ""}
-        </p>
-      </header>
-      <Card className="space-y-5 p-6">
-        <Section title="주요 업무" body={job.duties} />
-        <Section title="지원 요건" body={job.requirements} />
-        <Section title="우대 사항" body={job.preferred} />
-      </Card>
-      <p className="flex items-center gap-1 text-sm text-muted"><Lock className="h-4 w-4" aria-hidden />AI 면접은 기업 내부망 서버에서만 처리됩니다.</p>
-      <div className="sticky bottom-0 -mx-4 flex items-center justify-end gap-3 border-t border-border bg-surface px-4 py-3 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0">
-        {closed && !myApp && dday.tone === "closed" && <span className="text-sm text-muted">마감일이 지났습니다</span>}
-        {cta}
-      </div>
+      <JobBody
+        job={{ title: job.title, company: job.company_name, category: job.job_category, deadline: job.deadline_at, headcount: job.headcount, duties: job.duties, requirements: job.requirements,
+          preferred: job.preferred, contactEmail: job.contact_email, answerLimitSec: job.answer_time_limit_sec, questionCount: job.interview_question_count, maxFollowups: job.max_followups,
+          codingEnabled: job.coding_test_enabled, codingLimitSec: job.coding_test_time_limit_sec,
+          workLocation: job.work_location, employmentType: job.employment_type, salaryText: job.salary_text, benefits: job.benefits, notice: job.notice }}
+        statusBadge={myApp?.result && <Badge tone={myApp.result === "pass" ? "success" : "neutral"}>{myApp.result === "pass" ? "합격" : "불합격"}</Badge>}
+        action={<>{closed && !myApp && dday.tone === "closed" && <p className="mb-2 text-center text-xs text-muted">마감일이 지났습니다</p>}{cta}</>} />
       <ConsentDialog open={open} busy={busy} error={err} onCancel={() => setOpen(false)} onAgree={() => void agree()} />
-    </article>
+    </div>
   );
 }

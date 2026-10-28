@@ -54,3 +54,20 @@ export function formatDeadline(iso: string | null | undefined): string {
 export const STATUS_LABEL: Record<MyApplication["status"], string> = {
   applied: "이력서 제출 대기", prepared: "장치 점검 대기", interviewing: "면접 진행 중", interview_done: "리포트 생성 중", report_ready: "리포트 완료",
 };
+
+/** 공고 본문(담당자가 입력한 줄글)을 항목 목록으로. 줄 앞의 "-", "•", "·", "*" 표시는 떼고 빈 줄은 버린다. */
+export function toBullets(text: string | null | undefined): string[] {
+  return (text ?? "").split(/\r?\n/).map((l) => l.trim().replace(/^[-•·*▪●]\s*/, "")).filter(Boolean);
+}
+
+/**
+ * 답변 시간 기준 "최대" 면접 소요 시간(분). 모든 질문에 제한시간을 꽉 채워 답하고 꼬리질문도 최대 횟수만큼 나오는 경우의 상한이다.
+ * 실제 소요 시간의 예측이 아니므로 화면에는 "최대"로 표기한다. 필요한 값이 없으면 null.
+ */
+export function maxInterviewMinutes(questions: number | null | undefined, followups: number | null | undefined, answerSec: number | null | undefined): number | null {
+  if (!questions || !answerSec) return null;
+  return Math.ceil((questions * (1 + (followups ?? 0)) * answerSec) / 60);
+}
+
+export const EMPLOYMENT_LABEL: Record<string, string> = { regular: "정규직", contract: "계약직", intern: "인턴", parttime: "파트타임" };
+export const EMPLOYMENT_OPTIONS = Object.entries(EMPLOYMENT_LABEL) as [string, string][];

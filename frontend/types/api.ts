@@ -1428,6 +1428,24 @@ export interface components {
             preferred?: string | null;
             /** Answer Time Limit Sec */
             answer_time_limit_sec?: number | null;
+            /** Coding Test Time Limit Sec */
+            coding_test_time_limit_sec?: number | null;
+            /** Contact Email */
+            contact_email?: string | null;
+            /** Work Location */
+            work_location?: string | null;
+            /** Employment Type */
+            employment_type?: string | null;
+            /** Salary Text */
+            salary_text?: string | null;
+            /** Benefits */
+            benefits?: string | null;
+            /** Notice */
+            notice?: string | null;
+            /** Interview Question Count */
+            interview_question_count?: number | null;
+            /** Max Followups */
+            max_followups?: number | null;
             /** Application Id */
             application_id?: string | null;
         };
@@ -1495,6 +1513,11 @@ export interface components {
             applicant_count: number;
             /** Unreviewed Count */
             unreviewed_count: number;
+            /**
+             * View Count
+             * @default 0
+             */
+            view_count: number;
             /** Coding Test Enabled */
             coding_test_enabled: boolean;
             /**
@@ -1540,6 +1563,16 @@ export interface components {
             preferred: string | null;
             /** Contact Email */
             contact_email: string | null;
+            /** Work Location */
+            work_location: string | null;
+            /** Employment Type */
+            employment_type: string | null;
+            /** Salary Text */
+            salary_text: string | null;
+            /** Benefits */
+            benefits: string | null;
+            /** Notice */
+            notice: string | null;
             /** Answer Time Limit Sec */
             answer_time_limit_sec: number | null;
             /** Coding Test Enabled */
@@ -1614,6 +1647,16 @@ export interface components {
             preferred?: string | null;
             /** Contact Email */
             contact_email?: string | null;
+            /** Work Location */
+            work_location?: string | null;
+            /** Employment Type */
+            employment_type?: ("regular" | "contract" | "intern" | "parttime") | null;
+            /** Salary Text */
+            salary_text?: string | null;
+            /** Benefits */
+            benefits?: string | null;
+            /** Notice */
+            notice?: string | null;
             /** Answer Time Limit Sec */
             answer_time_limit_sec?: number | null;
             /** Coding Test Enabled */

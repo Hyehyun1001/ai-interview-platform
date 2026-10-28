@@ -20,12 +20,15 @@ function JobCard({ job, applied }: { job: JobSummary; applied: boolean }) {
     <Link href={`/jobs/${job.id}`} data-testid="job-card" className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
       <Card className="h-full space-y-2 p-4 transition hover:border-primary">
         <div className="flex items-center justify-between">
-          {job.job_category ? <Badge tone="info">{job.job_category}</Badge> : <span />}
+          <div className="flex items-center gap-1.5">
+            {job.job_category && <Badge tone="info">{job.job_category}</Badge>}
+            {job.coding_test_enabled && <Badge tone="warning">코딩테스트</Badge>}
+          </div>
           <DDayBadge deadline={job.deadline_at} />
         </div>
         <h2 className="text-base font-bold">{job.title}</h2>
         <p className="text-sm text-muted">
-          {job.company_name}{job.headcount ? ` · 정원 ${job.headcount}명` : ""}{job.coding_test_enabled ? " · 코딩테스트 포함" : ""}
+          {job.company_name}{job.headcount ? ` · 정원 ${job.headcount}명` : ""}
         </p>
         <p className="text-sm text-muted">{formatDeadline(job.deadline_at)}</p>
         {applied && <Badge tone="success">지원 완료 ✓</Badge>}
