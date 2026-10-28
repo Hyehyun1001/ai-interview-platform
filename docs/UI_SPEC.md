@@ -728,6 +728,8 @@ ResumeStepPage (Server: application·등록본 prefetch)
 
 ### 4.4 APP-04 — 마이페이지 (`MYP`)
 
+> **구현 메모:** 마이페이지는 별도 페이지가 아니라 지원자 GNB 의 **사람 아이콘을 누르면 오른쪽에서 열리는 사이드 패널**(`MyPageDrawer`)이다. 열림·탭 상태는 현재 주소의 `?mypage=applications|resume|profile` 로 유지한다(뒤로가기·새로고침·딥링크 동작). 예전 `/mypage?tab=` 은 `/jobs?mypage=` 로 리다이렉트한다. 로그아웃은 패널 하단에 있다. '일정' 탭(P-Low)은 비활성 탭을 두지 않고 뺐다. 지원 현황은 좁은 패널에 맞게 표 대신 카드 목록이다.
+
 #### 4.4.1 와이어프레임
 
 ```
