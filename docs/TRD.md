@@ -252,7 +252,7 @@ flowchart LR
 - **파싱은 별도 프로세스**(`python -m app.ai.rag.pdf_worker`, 타임아웃 30s, 환경변수 비움)에서 수행한다 — 파서 크래시·무한루프·악성 PDF 가 API 프로세스에 영향을 주지 않는다 (§8.3).
 - 텍스트 레이어는 PyMuPDF 로 추출하고, **텍스트가 20자 미만인 페이지만** 200dpi 이미지로 Tesseract(`kor+eng`, CLI)에 넘긴다. Tesseract 가 없으면 OCR 을 건너뛰며 전체가 비면 `NO_TEXT` → 직접 작성 안내.
 - 정규화: 페이지 가장자리의 반복 줄(머리글·바닥글)과 페이지 표기(`n/m`, `page n`, `- n -`)만 제거한다. 숫자만 다른 본문 줄은 보존하고, 정제 후 페이지가 비면 원문을 되돌린다.
-- 구조화 추출(`app/ai/rag/extractor.py`)은 temperature 0 이며, **추출 결과의 학교·회사·프로젝트·기술명이 원문에 없으면 버린다**(환각 제거). 자소서는 LLM 을 거치지 않고 섹션 원문을 쓴다. 아무것도 추출하지 못하면 실패로 보고 직접 작성으로 전환한다.
+- 구조화 추출(`app/ai/rag/extractor.py`)은 temperature 0 이며, **추출 결과의 학교·회사·프로젝트·기술명이 원문에 없으면 버린다**(환각 제거). 자소서는 LLM 을 거치지 않고 섹션 원문을 쓴다. 아무것도 추출하지 못하면 실패로 보고 직접 작성으로 전환한다. **추출은 면접용과 다른 LLM 팩토리**(`extract_llm_factory`: 출력 `RESUME_EXTRACT_NUM_PREDICT`=1536, 대기 `RESUME_EXTRACT_TIMEOUT_S`=90)를 쓴다 — 면접용(256토큰·8초)을 쓰던 때는 JSON 이 중간에 끊겨 프로젝트·기술·자격이 사라지고(프로젝트 3개 중 1개, 기술·자격 0개), 모델이 꺼져 있던 첫 시도는 8초 읽기 타임아웃으로 실패했다. 출력이 한도에 걸려 끊긴 응답(`done_reason=length`)은 파서가 조용히 닫아 주지 못하게 **거부하고 재시도**하며(3회 모두 끊기면 직접 작성으로 전환), 입력은 섹션 할당량(합계 3,400자 + 여유)으로 자르되 뒤쪽 섹션이 전체 길이 제한에 잘리지 않게 한다. 섹션 제목 사전에는 "프로젝트 경험/경력/이력"·"개인/팀/수행 프로젝트"·"Project Experience"·"Personal/Side Projects" 등을 포함한다.
 
 **전처리 규칙**
 1. 유니코드 NFC 정규화, 연속 공백/개행 축소, 머리글·바닥글(페이지 번호) 제거(페이지 간 반복 줄 제거).
@@ -447,7 +447,7 @@ async def generate_with_guardrail(chain, inputs, max_attempts=3):
 
 **검증 시점(스트리밍 TTS 기준):** TTS 시작 전에 G1·G2·G4·G5·G6 을 모두 통과해야 한다. G3(Evidence quote)은 TTS 재생 중 후속 검증하며 실패하면 질문은 유지하고 근거 표시만 제거한다. 구현: `app/ai/guardrail.py`(`verify_before_tts`, `verify_evidence`, `generate_with_guardrail`).
 
-LLM 호출 옵션: Ollama `format="json"` + `temperature=0.2`, `num_ctx=4096`, `num_predict=256`.
+LLM 호출 옵션: Ollama `format="json"` + `temperature=0.2`, `num_ctx=6144`(리포트와 같은 값 — 다르면 Ollama 가 번갈아 호출할 때마다 모델을 다시 로드해 약 10초가 늘어난다, 실측), `num_predict=256`. **`num_predict=256` 은 면접용(꼬리질문·메인 질문) 전용이다.** 이력서 추출과 리포트는 각자의 팩토리(출력 한도·대기 시간)를 쓴다.
 
 **구현 규칙 (`app/ai/guardrail.py`)**
 - 재시도 대상은 **콘텐츠 실패**(스키마·G2~G6)뿐이다. LLM 연결 실패·타임아웃은 재시도하지 않고 `LLMUnavailable` 로 올려 호출자가 경량 모드(꼬리질문 생략·질문 뱅크 대체)를 고른다.
@@ -1215,6 +1215,8 @@ total_score 자체는 weights_snapshot 기준으로 고정되어 cutoff 변경�
 - **담당자 화면(ADM-04/04b/07/08):** 지원자 목록은 기존 `GET /admin/applications`(`job_id`·`review`·`sort`·`page`)를 쓴다(이름 검색·리포트/결정 필터는 불러온 페이지 안에서만 — 이름이 암호화 컬럼이라 서버 검색 불가, 진행 중 면접의 진행률은 제공하지 않음). 일정은 `PUT/DELETE /admin/schedules/{id}` 를 추가했다(회사 스코프, 겹침은 경고만). 공고 이력은 `GET /admin/job-history`(회사 스코프, 템플릿 제외). 지원자가 지원하면 담당자에게 `new_application` 알림(식별자만)을 만든다. 마감 D-1 알림과 공고 등록 시 자동 일정 생성은 스케줄러·구분 컬럼이 없어 구현하지 않았다.
 - **보호 장치:** 가입은 IP 당 10회/시간(`429 RATE_LIMITED`), 코드 실행은 사용자 당 20회/분. 코딩테스트 제한시간은 서버가 마지막 메인 질문의 답변 종료 시각에서 경과를 계산해 강제한다(제한+30초 초과 시 `run/submit` 이 `409 CODING_TIME_UP`, 문제 응답의 `elapsed_sec` 가 클라이언트 타이머 기준).
 - **공고 표기 정보·공고 상세·공고 목록 개편(마이그레이션 `0002`):** `job_postings` 에 `work_location`·`employment_type`·`salary_text`·`benefits`·`notice` 를 추가했다(모두 NULL 허용, 리비전 `0002_job_posting_display_fields`). `POST/PUT /admin/jobs` 가 받고(`employment_type` 은 허용 목록 밖이면 `422`, `benefits`·`notice` ≤ 3000자), `GET /admin/jobs/{id}`·`GET /jobs/{id}` 가 돌려주며, 템플릿 저장·불러오기에도 복사된다. **이 5개는 AI 질문 생성·JD 인덱싱에 쓰이지 않는다**(`duties/requirements/preferred` 만 JD). `GET /jobs/{id}` 에는 안내용 `coding_test_time_limit_sec`·`interview_question_count`·`max_followups` 도 더했다(기존 데이터를 노출할 뿐 컬럼은 없다). `GET /admin/jobs` 항목에는 `view_count` 를 더했다.
+- **리포트 워커의 면접 양보(지연 병목 대응):** 리포트 생성은 몇 분 걸리고 Ollama 는 한 번에 하나만 처리한다. 예전에는 면접 중이면 *새 잡을 시작하지 않을 뿐* 진행 중인 생성은 끝까지 돌아, 다음 지원자의 면접 호출이 그 뒤에 줄을 서 8초 타임아웃(`LLM_TIMEOUT_S`)에 걸리고 꼬리질문이 생략·질문이 대체되었다(실측: 메인→메인 전환 약 15초 정체). 이제 워커는 진행 중인 생성을 1초마다 점검해 면접이 시작되면(상태 `in_progress`·`paused`·`coding`, 준비 완료 후 10분 이내의 `ready`, 내장 워커는 warm-up 중 신호 포함) **즉시 취소**하고(요청이 끊기면 Ollama 가 생성을 멈춘다) 잡을 실패로 세지 않고(`attempts` 복원) `queued` 로 되돌린 뒤 면접이 끝나면 처음부터 다시 만든다. 별도 프로세스 워커는 warm-up 중 신호를 알 수 없다.
+- **지연 측정:** 서버는 `app.interview.timing` 로거로 답변 종료 → 다음 질문 음성까지의 단계별 시간(음성 인식 마무리·꼬리질문 판단·다음 질문 대기·질문 시작·음성 첫/마지막 청크)을 한 줄로 남긴다(숫자와 세션 식별자만, 원문 없음). `backend/scripts/measure_e2e_latency.py` 는 실제 서버를 WebSocket 으로 구동해 같은 구간을 클라이언트에서 잰다.
 - **세션 종료:** `POST /sessions/{id}/finish` 는 런타임을 닫을 뿐 아니라 `SessionManager.discard` 로 레지스트리에서도 제거해 슬롯을 반환한다(이전에는 닫힌 런타임이 남아 `MAX_CONCURRENT_SESSIONS=1` 에서 다음 지원자가 시작하지 못했다).
 
 **미구현:** 질문 뱅크 후보 개별 수정·삭제 API, 질문 세트 드래그 정렬, 비밀번호 재설정(계정 찾기), 비밀번호 변경 시 기존 토큰 폐기(무상태 JWT라 별도 저장소/컬럼 필요), 공고별 코딩 문제 작성, 마이페이지 일정 탭, 구글 OAuth, 마감 D-1 알림·자동 일정.
@@ -1274,7 +1276,9 @@ OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:7b-instruct-q4_K_M
 OLLAMA_KEEP_ALIVE=30m
 LLM_TIMEOUT_S=8
-LLM_NUM_CTX=4096
+LLM_NUM_CTX=6144                   # REPORT_NUM_CTX 와 같게 유지(다르면 모델 재로드)
+RESUME_EXTRACT_NUM_PREDICT=1536    # 이력서 구조화 추출의 출력 토큰 한도 (면접용 256 으로는 JSON 이 잘린다)
+RESUME_EXTRACT_TIMEOUT_S=90        # 추출 시도당 대기 상한
 CLOUD_FALLBACK_ENABLED=false
 CLOUD_PROVIDER=anthropic           # anthropic | openai
 ANTHROPIC_API_KEY=
