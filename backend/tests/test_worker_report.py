@@ -496,3 +496,90 @@ async def test_generic_fallback_question_never_repeats(rest):
         q = await brain.next_main_question(sess.id, i + 5, asked)  # 등록 질문/슬롯이 없는 인덱스
         assert q.text not in asked and q.source == "generic"
         asked.append(q.text)
+
+
+# ── 면접에 양보 (Ollama 는 한 번에 하나만 처리한다) ──────────────────────────────
+async def test_running_report_yields_to_an_interview_that_starts_and_resumes_afterwards(rest, monkeypatch):
+    from sqlalchemy import select as sa_select
+
+    from app.models import BackgroundJob
+    from app.worker import runner
+
+    co, hr, user, job, app, sess, turns = await make_session(rest, answers=(A1,), durations=(10_000,))
+    ref = f"turn:{turns[0].id}"
+    other = await rest.applicant("b@corp.local", "이다른")
+    live_app = Application(user_id=other.id, job_id=job.id, status=ApplicationStatus.PREPARED, consent_at=utcnow())
+    await rest.add(live_app)
+    live = InterviewSession(application_id=live_app.id, state=SessionState.CREATED)
+    await rest.add(live)
+
+    real = runner.generate_report
+    cancelled = asyncio.Event()
+
+    async def slow_report(*a, **kw):  # noqa: ANN002, ANN003, ANN202  LLM 호출이 오래 걸리는 리포트 (취소되면 표시)
+        async with rest.sm() as s:  # 실제 구현처럼 생성 시작 시 report 를 running 으로 표시한다
+            from app.models import EvaluationReport as ER
+
+            rep = (await s.execute(select(ER).where(ER.session_id == sess.id))).scalar_one_or_none() or ER(session_id=sess.id)
+            rep.status = ReportStatus.RUNNING
+            s.add(rep)
+            await s.commit()
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    monkeypatch.setattr(runner, "generate_report", slow_report)
+    w = worker(rest, preempt_check_s=0.05)
+
+    async def start_interview_soon():
+        await asyncio.sleep(0.3)
+        async with rest.sm() as s:
+            row = await s.get(InterviewSession, live.id)
+            row.state = SessionState.IN_PROGRESS
+            await s.commit()
+
+    starter = asyncio.create_task(start_interview_soon())
+    assert await w.run_once() == "preempted"
+    await starter
+    assert cancelled.is_set()  # 진행 중이던 LLM 작업이 실제로 취소되었다 (Ollama 를 놓아 준다)
+    async with rest.sm() as s:
+        j = (await s.execute(sa_select(BackgroundJob))).scalar_one()
+        assert j.status == QueueStatus.QUEUED and j.attempts == 0  # 실패로 세지 않는다
+        rep = (await s.execute(select(EvaluationReport).where(EvaluationReport.session_id == sess.id))).scalar_one()
+        assert rep.status == ReportStatus.QUEUED  # 'running' 으로 남지 않는다
+    assert await w.run_once() == "paused"  # 면접이 진행되는 동안은 새로 시작하지도 않는다
+    async with rest.sm() as s:
+        row = await s.get(InterviewSession, live.id)
+        row.state = SessionState.FINISHED
+        await s.commit()
+    monkeypatch.setattr(runner, "generate_report", real)
+    rest.llm.script.extend([eval_json(ref=ref), narrative_json(ref).replace("그냥 제가 참았습니다", "Redis 캐시를 도입해")])
+    assert await w.run_once() == "done"  # 면접이 끝나면 처음부터 다시 생성해 완료한다
+
+
+async def test_imminent_interview_and_in_process_busy_signal_also_pause_the_worker(rest):
+    from datetime import timedelta
+
+    co, hr, user, job, app, sess, turns = await make_session(rest, answers=(A1,), durations=(10_000,))
+    other = await rest.applicant("b@corp.local", "이다른")
+    ap2 = Application(user_id=other.id, job_id=job.id, status=ApplicationStatus.PREPARED, consent_at=utcnow())
+    await rest.add(ap2)
+    ready = InterviewSession(application_id=ap2.id, state=SessionState.READY)
+    await rest.add(ready)
+    assert await queue.interview_active(rest.sm) is True  # 준비를 마치고 곧 시작할 지원자
+    async with rest.sm() as s:  # 오래 방치된 READY 는 리포트를 막지 않는다
+        row = await s.get(InterviewSession, ready.id)
+        row.updated_at = utcnow() - timedelta(minutes=30)
+        await s.commit()
+    assert await queue.interview_active(rest.sm) is False
+    assert await worker(rest, busy=lambda: True).run_once() == "paused" and not rest.llm.calls  # warm-up 중 신호
+
+
+def test_interview_and_report_use_the_same_ollama_context_to_avoid_model_reload():
+    from app.core.config import Settings
+    from tests.conftest import TEST_FERNET_KEY, TEST_JWT_SECRET
+
+    s = Settings(_env_file=None, jwt_secret=TEST_JWT_SECRET, data_encryption_key=TEST_FERNET_KEY)
+    assert s.llm_num_ctx == s.report_num_ctx  # 다르면 번갈아 호출할 때마다 모델을 다시 로드한다 (실측 +약 10초)

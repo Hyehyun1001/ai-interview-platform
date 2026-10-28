@@ -42,7 +42,8 @@ def create_app(settings: Settings | None = None, engines: Engines | None = None,
 
             worker = ReportWorker(sessionmaker, app.state.services.report_llm_factory or report_llm_factory(settings), sink=DbGuardrailEventSink(sessionmaker),
                                   poll_interval_s=settings.report_poll_interval_s, max_attempts=settings.report_max_attempts,
-                                  llm_timeout_s=settings.report_llm_timeout_s, model_name=settings.ollama_model)
+                                  llm_timeout_s=settings.report_llm_timeout_s, model_name=settings.ollama_model,
+                                  busy=lambda: any(v == "warming" for v in app.state.services.warmups.values()))  # 면접 warm-up(LLM 호출) 중에는 리포트가 양보한다
             worker_task = asyncio.create_task(worker.run_forever(stop), name="report-worker")
         yield
         stop.set()

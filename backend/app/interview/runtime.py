@@ -36,6 +36,7 @@ from app.schemas.ws import (CLIENT_ADAPTER, AnswerEnd, AnswerStart, GazeEventMsg
                             server_message)
 
 log = logging.getLogger("app.interview")
+timing = logging.getLogger("app.interview.timing")  # 답변 종료 → 다음 질문 음성까지 단계별 소요 시간(개인정보·원문 없음, 숫자와 식별자만)
 
 GAZE_MESSAGES = {
     GazeKind.GAZE_AWAY: "화면 밖을 응시하고 있어요. 화면을 바라봐 주세요.",  # 부정행위 단정 표현 금지 (TRD §4.4)
@@ -135,6 +136,8 @@ class SessionRuntime:
         self._recovered: tuple[TurnState, str] | None = None
         self.code_followups = 0
         self._code_ctx: CodeContext | None = None
+        self._tl_flags: dict[str, object] = {}
+        self._tl: dict[str, float] = {}  # 현재 답변 종료 이후의 단계별 monotonic 시각 (지연 병목 확인용)
         self.closed = False
         self.media_frames_dropped = 0
 
@@ -199,6 +202,23 @@ class SessionRuntime:
                 await self.error("INTERNAL", "일시적인 오류가 발생했습니다", recoverable=False)
 
         self._tasks[name] = asyncio.create_task(runner(), name=f"{self.session_id}:{name}")
+
+    def _mark(self, name: str, *, once: bool = True) -> None:
+        if self._tl and (not once or name not in self._tl):
+            self._tl[name] = time.monotonic()
+
+    def _log_timing(self, turn: TurnState) -> None:
+        """다음 질문의 마지막 음성 청크를 보낸 시점에 한 줄로 남긴다. 어느 단계가 길었는지가 목적이다."""
+        t = self._tl
+        if "end" not in t:
+            return
+        d = lambda a, b: (t[b] - t[a]) if a in t and b in t else float("nan")  # noqa: E731
+        timing.info("timing session=%s next_kind=%s next_turn=%d stt_tail_s=%.2f decide_s=%.2f decision_needed=%s prefetch_wait_s=%.2f prefetch_ready=%s "
+                    "question_begin_s=%.2f tts_first_chunk_s=%.2f tts_last_chunk_s=%.2f total_s=%.2f",
+                    self.session_id, turn.kind.value, turn.turn_no, d("end", "stt_done"), d("decide_start", "decide_done"), self._tl_flags.get("needed"),
+                    d("prefetch_wait_start", "prefetch_wait_done"), self._tl_flags.get("prefetch_ready"), d("end", "question_begin"),
+                    d("end", "tts_first"), d("end", "tts_last"), d("end", "tts_last"))
+        self._tl = {}
 
     def _cancel(self, name: str) -> None:
         t = self._tasks.pop(name, None)
@@ -353,6 +373,7 @@ class SessionRuntime:
                 await db.commit()
             self.turn, self.phase = turn, Phase.ASKING
             self.asked.append(text)
+        self._mark("question_begin")
         await self._announce(turn)
         if kind == TurnKind.MAIN:
             self._start_prefetch()
@@ -401,8 +422,14 @@ class SessionRuntime:
             return False
 
     async def _send_tts(self, turn: TurnState, idx: int, data: bytes, *, last: bool) -> None:
+        if idx == 0:
+            self._mark("tts_first")
+        if last:
+            self._mark("tts_last")
         await self.send("tts_chunk", turn_id=str(turn.turn_id), idx=idx, last=last, format=self.eng.tts.format,
                         data_b64=base64.b64encode(data).decode("ascii"))
+        if last:
+            self._log_timing(turn)
 
     async def _countdown(self, turn: TurnState) -> None:
         t = self.eng.tuning
@@ -459,6 +486,7 @@ class SessionRuntime:
             if self.phase != Phase.ANSWERING or self.turn is not turn:
                 return False  # 멱등: 이미 종료됨 (silence/timeout/user 경합)
             self.phase, self._stage = Phase.THINKING, "stt"
+        self._tl, self._tl_flags = {"end": time.monotonic()}, {}
         self._cancel("deadline")
         self._cancel("grace")
         if turn.recording:
@@ -489,6 +517,7 @@ class SessionRuntime:
             log.warning("stt failed: %s", type(e).__name__)
             await self.error("STT_FAILED", "음성 인식이 잠시 지연되었습니다", recoverable=True)
             result = SttResult("", None, None)
+        self._mark("stt_done")
         await self._update_turn(turn.turn_id, answer_text=result.text,
                                 stt_meta={"avg_logprob": result.avg_logprob, "no_speech_prob": result.no_speech_prob,
                                           "model": getattr(self.eng.stt, "model_name", None)})
@@ -512,8 +541,11 @@ class SessionRuntime:
 
             ctx = FollowupContext(self.session_id, turn.turn_id, turn.text, result.text, result.low_confidence,
                                   list(self.asked), self.followup_count, cfg.max_followups)
+            self._mark("decide_start")
             try:
                 decision, _early = await self.eng.brain.decide_followup(ctx, on_ready)
+                self._mark("decide_done")
+                self._tl_flags["needed"] = decision.needed
             except LLMUnavailable:
                 await self._mark_degraded("llm_unavailable", "AI 응답이 지연되어 꼬리질문 없이 진행합니다")
                 decision = FollowupDecision.skip()
@@ -534,11 +566,14 @@ class SessionRuntime:
         idx = self.main_asked
         pre, self._prefetch = self._prefetch, None
         if pre and pre[0] == idx:
+            self._tl_flags["prefetch_ready"] = pre[1].done()
+            self._mark("prefetch_wait_start")
             if not pre[1].done():
                 self._stage = "generation"
                 await self.send("thinking", turn_id=None, stage="generation")
             try:
                 draft = await pre[1]
+                self._mark("prefetch_wait_done")
             except Exception:  # noqa: BLE001  prefetch 실패 시 직접 생성
                 draft = await self.eng.brain.next_main_question(self.session_id, idx, list(self.asked))
         else:
@@ -550,6 +585,13 @@ class SessionRuntime:
         await self._begin_question(kind=TurnKind.MAIN, text=draft.text, category=draft.category, evidence=draft.evidence,
                                    time_limit=draft.time_limit_sec)
 
+    async def _timed_prefetch(self, idx: int) -> QuestionDraft:
+        t0 = time.monotonic()
+        try:
+            return await self.eng.brain.next_main_question(self.session_id, idx, list(self.asked))
+        finally:
+            timing.info("prefetch session=%s index=%d duration_s=%.2f", self.session_id, idx, time.monotonic() - t0)
+
     def _start_prefetch(self) -> None:
         """질문 N+1 사전 생성: 지원자가 N번에 답하는 동안 다음 메인 질문을 미리 만든다 (TRD §2.4)."""
         nxt = self.main_asked
@@ -557,7 +599,7 @@ class SessionRuntime:
             return
         if self._prefetch:
             self._prefetch[1].cancel()
-        self._prefetch = (nxt, asyncio.create_task(self.eng.brain.next_main_question(self.session_id, nxt, list(self.asked))))
+        self._prefetch = (nxt, asyncio.create_task(self._timed_prefetch(nxt)))
 
     async def _finish(self) -> None:
         coding = self.cfg.coding_enabled

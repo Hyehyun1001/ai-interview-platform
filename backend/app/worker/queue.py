@@ -16,6 +16,7 @@ from app.models.enums import QueueStatus, SessionState
 RETRY_BACKOFF_S = (30, 120, 300)
 STALE_RUNNING = timedelta(minutes=15)  # 워커가 죽어 running 으로 남은 잡을 되살리는 기준
 INTERVIEW_STATES = (SessionState.IN_PROGRESS, SessionState.PAUSED, SessionState.CODING)
+READY_WINDOW = timedelta(minutes=10)  # 준비를 마치고(READY) 곧 면접을 시작할 지원자: 이 시간 안이면 면접이 임박한 것으로 본다
 
 
 @dataclass
@@ -29,7 +30,13 @@ class ClaimedJob:
 async def interview_active(sm: async_sessionmaker) -> bool:
     """진행 중(또는 일시정지로 슬롯을 점유한) 면접이 있으면 무거운 후처리를 멈춘다 (TRD §1.3, §2.5)."""
     async with sm() as db:
-        return (await db.execute(select(InterviewSession.id).where(InterviewSession.state.in_(INTERVIEW_STATES)).limit(1))).first() is not None
+        live = (await db.execute(select(InterviewSession.id).where(InterviewSession.state.in_(INTERVIEW_STATES)).limit(1))).first()
+        if live is not None:
+            return True
+        # 면접 시작 직전(준비 완료 후 대기): 이때 리포트가 Ollama 를 잡고 있으면 첫 질문 생성이 타임아웃으로 밀린다
+        imminent = (await db.execute(select(InterviewSession.id).where(InterviewSession.state == SessionState.READY,
+                                                                        InterviewSession.updated_at > utcnow() - READY_WINDOW).limit(1))).first()
+        return imminent is not None
 
 
 async def requeue_stale(sm: async_sessionmaker) -> int:
@@ -58,6 +65,14 @@ async def claim(sm: async_sessionmaker, job_type: str) -> ClaimedJob | None:
 async def complete(sm: async_sessionmaker, job_id: uuid.UUID) -> None:
     async with sm() as db:
         await db.execute(update(BackgroundJob).where(BackgroundJob.id == job_id).values(status=QueueStatus.DONE))
+        await db.commit()
+
+
+async def release(sm: async_sessionmaker, job_id: uuid.UUID) -> None:
+    """면접에 자리를 양보하려고 중단한 잡을 되돌린다. 실패가 아니므로 시도 횟수를 되돌리고 백오프 없이 queued 로 둔다."""
+    async with sm() as db:
+        await db.execute(update(BackgroundJob).where(BackgroundJob.id == job_id)
+                         .values(status=QueueStatus.QUEUED, attempts=BackgroundJob.attempts - 1, updated_at=utcnow()))
         await db.commit()
 
 

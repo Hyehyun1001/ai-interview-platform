@@ -38,6 +38,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8000)
     ap.add_argument("--dir", default=str(BACKEND / ".devstack-real"))
+    ap.add_argument("--no-report-worker", action="store_true", help="내장 리포트 워커를 끈다(지연 측정 시 이전 면접의 리포트 생성이 LLM 을 점유하는 영향을 배제)")
     a = ap.parse_args()
     root = Path(a.dir)
     shutil.rmtree(root, ignore_errors=True)
@@ -47,9 +48,17 @@ def main() -> None:
     cfg.set_main_option("script_location", str(BACKEND / "alembic"))
     cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
     command.upgrade(cfg, "head")
-    settings = Settings(_env_file=None, database_url=url, media_root=root / "media", chroma_path=root / "chroma", max_concurrent_sessions=1, report_worker_embedded=True, interview_main_count=3,
+    settings = Settings(_env_file=None, database_url=url, media_root=root / "media", chroma_path=root / "chroma", max_concurrent_sessions=1, report_worker_embedded=not a.no_report_worker, interview_main_count=3,
                         sandbox_enabled=True,  # 코딩테스트 공고를 쓰려면 샌드박스가 켜져 있어야 한다(도커 이미지: backend/sandbox/build.sh)
                         jwt_secret=os.environ["JWT_SECRET"], data_encryption_key=os.environ["DATA_ENCRYPTION_KEY"])
+    import logging
+
+    h = logging.StreamHandler()  # 지연 병목 확인용: 단계별 타이밍 로그를 시각과 함께 출력한다 (원문 없음)
+    h.setFormatter(logging.Formatter("%(asctime)s.%(msecs)03d %(message)s", "%H:%M:%S"))
+    tl = logging.getLogger("app.interview.timing")
+    tl.addHandler(h)
+    tl.setLevel(logging.INFO)
+    tl.propagate = False
     app = create_app(settings)  # 기본 엔진: FasterWhisperSTT + LocalSayTTS + ChainBrain(Ollama)
     app.state.register_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)
     app.state.login_limiter = SlidingWindowLimiter(max_events=10_000, window_sec=60)

@@ -353,3 +353,27 @@ def test_gaze_event_for_unknown_turn_is_rejected(make_env):
         ctl.until("question")
         ctl.send(type="gaze_event", turn_id=str(uuid.uuid4()), kind="gaze_away", start_ms=0, end_ms=10)
         assert ctl.until("error", code="BAD_TURN")["recoverable"]
+
+
+def test_timing_log_has_stage_durations_and_never_contains_user_text(make_env, caplog):
+    """지연 병목 확인용 로그: 답변 종료 → 다음 질문 음성의 단계별 시간. 숫자·식별자만 남기고 질문·답변 원문은 남기지 않는다."""
+    import logging
+    import re
+
+    caplog.set_level(logging.INFO, logger="app.interview.timing")
+    env = make_env(slots=2, brain=FakeBrain(total_main=2, followups=[needed("Redis 캐시 무효화는 어떻게 처리하셨나요?")]))
+    tok = env.tokens()
+    with env.control(tok["control_token"]) as ws, env.media(tok["media_token"]) as mws:
+        ctl = Ctl(ws)
+        q1 = ctl.until("question")
+        answer(env, ctl, mws, q1["turn_id"])
+        ctl.until("question", kind="followup")
+        ctl.until("tts_chunk", last=True)
+        env.wait_for(lambda: any("timing session=" in r.getMessage() for r in caplog.records), what="timing log")
+    lines = [r.getMessage() for r in caplog.records if r.name == "app.interview.timing"]
+    t = next(m for m in lines if m.startswith("timing session="))
+    assert "next_kind=followup" in t and re.search(r"decision_needed=True", t)
+    for key in ("stt_tail_s", "decide_s", "question_begin_s", "tts_first_chunk_s", "tts_last_chunk_s", "total_s"):
+        assert re.search(rf"{key}=\d+\.\d\d", t), key
+    blob = "\n".join(lines)
+    assert "Redis" not in blob and "번째 질문" not in blob  # 원문 비노출
