@@ -53,8 +53,9 @@ export function DecisionPanel({ app }: { app: ApplicationDetail }) {
       {(app.report_status === "queued" || app.report_status === "running") && <p role="status" className="rounded bg-info-bg p-3 text-sm text-info">리포트를 생성하고 있어요. 완료되면 결정할 수 있습니다.</p>}
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone={app.final_decision === "pass" ? "success" : app.final_decision === "fail" ? "danger" : "neutral"} data-testid="decision-badge">{LABEL[app.final_decision]}</Badge>
-        <Button disabled={!ready} onClick={() => setDlg({ decision: "pass", ack: false })}>합격 처리</Button>
-        <Button variant="secondary" disabled={!ready} onClick={() => setDlg({ decision: "fail", ack: false })}>불합격 처리</Button>
+        {/* 두 버튼은 같은 모양이고, 실제로 선택된 결정(합격/불합격)만 파란색으로 강조한다 — 파란 버튼이 "추천"처럼 보이지 않게 */}
+        <Button variant={app.final_decision === "pass" ? "primary" : "secondary"} aria-pressed={app.final_decision === "pass"} disabled={!ready} onClick={() => setDlg({ decision: "pass", ack: false })} data-testid="decision-pass">합격 처리</Button>
+        <Button variant={app.final_decision === "fail" ? "primary" : "secondary"} aria-pressed={app.final_decision === "fail"} disabled={!ready} onClick={() => setDlg({ decision: "fail", ack: false })} data-testid="decision-fail">불합격 처리</Button>
         {app.final_decision !== "pending" && <Button variant="ghost" disabled={!ready} onClick={() => setDlg({ decision: "pending", ack: false })}>결정 취소</Button>}
         <Button variant="secondary" onClick={() => { setTemplate(app.final_decision === "fail" ? "fail" : app.final_decision === "pass" ? "pass" : "schedule"); setMailOpen(true); }}>안내 메일</Button>
       </div>

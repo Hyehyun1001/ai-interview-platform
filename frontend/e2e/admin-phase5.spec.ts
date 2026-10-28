@@ -81,9 +81,14 @@ test("ADM-06 결정·메일: 합격 처리 → 메일 → 안내 후 변경은 �
   await page.getByRole("row", { name: /최서연/ }).getByRole("link", { name: "상세 보기" }).click();
   const badge = page.getByTestId("decision-badge");
   await expect(badge).toHaveText("결정 대기");
+  // 결정 전에는 두 버튼이 똑같이 중립 색이고, 눌러서 확정한 쪽만 파란색(선택됨)이 된다
+  const pass = page.getByTestId("decision-pass"), fail = page.getByTestId("decision-fail");
+  for (const b of [pass, fail]) { await expect(b).toHaveAttribute("aria-pressed", "false"); await expect(b).not.toHaveClass(/bg-primary/); }
   await page.getByRole("button", { name: "합격 처리", exact: true }).click();
   await page.getByTestId("decision-confirm").click();
   await expect(badge).toHaveText("합격");
+  await expect(pass).toHaveAttribute("aria-pressed", "true"); await expect(pass).toHaveClass(/bg-primary/);
+  await expect(fail).toHaveAttribute("aria-pressed", "false"); await expect(fail).not.toHaveClass(/bg-primary/);
 
   page.on("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "안내 메일" }).click();
@@ -95,10 +100,12 @@ test("ADM-06 결정·메일: 합격 처리 → 메일 → 안내 후 변경은 �
   await expect(page.getByRole("button", { name: "변경 확인" })).toBeVisible();
   await page.getByRole("button", { name: "변경 확인" }).click();
   await expect(badge).toHaveText("불합격");
+  await expect(fail).toHaveClass(/bg-primary/); await expect(pass).not.toHaveClass(/bg-primary/);
   await page.getByRole("button", { name: "결정 취소" }).click();
   await page.getByTestId("decision-confirm").click();  // 안내 메일이 나간 건이라 취소도 확인 필요
   await page.getByRole("button", { name: "변경 확인" }).click();
   await expect(badge).toHaveText("결정 대기");
+  for (const b of [pass, fail]) await expect(b).not.toHaveClass(/bg-primary/);   // 취소하면 다시 둘 다 중립
 });
 
 test("열람 확인: 상세에 2초 머물면 미검토 KPI 가 줄어든다", async ({ page }) => {
