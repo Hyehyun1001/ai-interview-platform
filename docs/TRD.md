@@ -767,6 +767,11 @@ erDiagram
 | coding_test_time_limit_sec | int | |
 | answer_time_limit_sec | int | 기본 답변 제한 (질문별 override 가능) |
 | contact_email | varchar | |
+| work_location | varchar(200) NULL | 근무지 (지원자 공고 상세 표기용 — **AI 질문 생성의 JD 인덱싱 대상 아님**) |
+| employment_type | varchar(20) NULL | `regular`·`contract`·`intern`·`parttime` (API 에서 허용 목록 검증, 표기용) |
+| salary_text | varchar(100) NULL | 급여 자유 입력 ("회사 내규에 따름" 등, 표기용) |
+| benefits | text NULL | 복리후생 (줄 단위 항목, 표기용) |
+| notice | text NULL | 전형 안내·유의 사항 (줄 단위 항목, 표기용) |
 | view_count | int | |
 | is_template | bool, template_name | 템플릿 저장 |
 | cutoff_score | numeric(5,2) NULL | AI 예상 합불 기준 점수 (PRD 10장 #5). NULL이면 예상 합불 `unavailable`. 공고 작성 3단계(가중치) 화면에서 입력 |
@@ -979,7 +984,7 @@ total_score 자체는 weights_snapshot 기준으로 고정되어 cutoff 변경�
 | Method | Path | 권한 | 설명 |
 |---|---|---|---|
 | GET | `/jobs?category=&q=&status=open&page=` | A | 목록·필터·검색 |
-| GET | `/jobs/{id}` | A | 상세 (조회수 +1) |
+| GET | `/jobs/{id}` | A | 상세 (조회수 +1). 본문(`duties/requirements/preferred`)과 함께 표기 정보(`work_location`·`employment_type`·`salary_text`·`benefits`·`notice`·`contact_email`)와 안내용 값(`coding_test_time_limit_sec`(코테 ON 일 때만)·`interview_question_count`(서버 `INTERVIEW_MAIN_COUNT`)·`max_followups`)을 내린다 |
 | POST | `/jobs/{id}/apply` | A | 지원 생성 + 동의 기록 `{consent:true, consent_version}` → `application_id` |
 
 ### 7.3 이력서
@@ -1209,6 +1214,7 @@ total_score 자체는 weights_snapshot 기준으로 고정되어 cutoff 변경�
 - **담당자 지원자 상세 탭:** `GET /admin/applications/{id}` 응답에 `session_id`, `coding_test_enabled`, `report`(리포트가 `done` 일 때만: 총평·항목별 점수와 실제 합산 가중치·강점/개선점·시선 이탈률·감점·채점 제외 턴 수)를 더했다(신규 엔드포인트 없음, 필드만 추가). 제출 코드 탭은 기존 `GET /sessions/{id}/code/result`(담당자는 코드·정적 분석 포함, 열람 감사 기록)를, 표준 이력서 탭은 `GET /applications/{id}/resume/standard` 를 쓴다. UI_SPEC 의 `GET /admin/applications/{id}/code` 와 원본 PDF 링크는 만들지 않았다(원본 PDF 는 추출 직후 삭제하고, AI 코드 리뷰는 아직 생성하지 않는다).
 - **담당자 화면(ADM-04/04b/07/08):** 지원자 목록은 기존 `GET /admin/applications`(`job_id`·`review`·`sort`·`page`)를 쓴다(이름 검색·리포트/결정 필터는 불러온 페이지 안에서만 — 이름이 암호화 컬럼이라 서버 검색 불가, 진행 중 면접의 진행률은 제공하지 않음). 일정은 `PUT/DELETE /admin/schedules/{id}` 를 추가했다(회사 스코프, 겹침은 경고만). 공고 이력은 `GET /admin/job-history`(회사 스코프, 템플릿 제외). 지원자가 지원하면 담당자에게 `new_application` 알림(식별자만)을 만든다. 마감 D-1 알림과 공고 등록 시 자동 일정 생성은 스케줄러·구분 컬럼이 없어 구현하지 않았다.
 - **보호 장치:** 가입은 IP 당 10회/시간(`429 RATE_LIMITED`), 코드 실행은 사용자 당 20회/분. 코딩테스트 제한시간은 서버가 마지막 메인 질문의 답변 종료 시각에서 경과를 계산해 강제한다(제한+30초 초과 시 `run/submit` 이 `409 CODING_TIME_UP`, 문제 응답의 `elapsed_sec` 가 클라이언트 타이머 기준).
+- **공고 표기 정보·공고 상세·공고 목록 개편(마이그레이션 `0002`):** `job_postings` 에 `work_location`·`employment_type`·`salary_text`·`benefits`·`notice` 를 추가했다(모두 NULL 허용, 리비전 `0002_job_posting_display_fields`). `POST/PUT /admin/jobs` 가 받고(`employment_type` 은 허용 목록 밖이면 `422`, `benefits`·`notice` ≤ 3000자), `GET /admin/jobs/{id}`·`GET /jobs/{id}` 가 돌려주며, 템플릿 저장·불러오기에도 복사된다. **이 5개는 AI 질문 생성·JD 인덱싱에 쓰이지 않는다**(`duties/requirements/preferred` 만 JD). `GET /jobs/{id}` 에는 안내용 `coding_test_time_limit_sec`·`interview_question_count`·`max_followups` 도 더했다(기존 데이터를 노출할 뿐 컬럼은 없다). `GET /admin/jobs` 항목에는 `view_count` 를 더했다.
 - **세션 종료:** `POST /sessions/{id}/finish` 는 런타임을 닫을 뿐 아니라 `SessionManager.discard` 로 레지스트리에서도 제거해 슬롯을 반환한다(이전에는 닫힌 런타임이 남아 `MAX_CONCURRENT_SESSIONS=1` 에서 다음 지원자가 시작하지 못했다).
 
 **미구현:** 질문 뱅크 후보 개별 수정·삭제 API, 질문 세트 드래그 정렬, 비밀번호 재설정(계정 찾기), 비밀번호 변경 시 기존 토큰 폐기(무상태 JWT라 별도 저장소/컬럼 필요), 공고별 코딩 문제 작성, 마이페이지 일정 탭, 구글 OAuth, 마감 D-1 알림·자동 일정.
