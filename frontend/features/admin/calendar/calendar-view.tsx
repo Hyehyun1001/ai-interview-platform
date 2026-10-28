@@ -1,7 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, EmptyState, ErrorState, Skeleton } from "@/components/ui/primitives";
 import { cn } from "@/lib/utils";
 import { listSchedules, scheduleKeys } from "../api";
@@ -17,6 +17,7 @@ const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("ko-KR", { hour: 
 /** ADM-07 면접 일정 캘린더: 월/주/리스트 보기, 일정 클릭=수정·삭제, 빈 날짜 클릭=그 날짜로 추가 (경량 자체 구현). */
 export function CalendarView() {
   const [view, setView] = useState<View>("month");
+  useEffect(() => { if (window.innerWidth < 768) setView("list"); }, []);  // 좁은 화면에서는 월 격자 대신 리스트가 읽기 쉽다
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
   const [editing, setEditing] = useState<Sched | null>(null);
   const [creating, setCreating] = useState<string | null>(null);   // 추가 모달: 기본 시작 일시
@@ -37,16 +38,20 @@ export function CalendarView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-xl font-bold">일정 관리</h2>
-        <div role="group" aria-label="보기 방식" className="ml-4 flex rounded border border-border">
+        <Button onClick={() => addAt(anchor)} data-testid="schedule-add"><Plus className="h-4 w-4" aria-hidden />일정 추가</Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div role="group" aria-label="보기 방식" className="flex rounded border border-border">
           {VIEWS.map(([v, l]) => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)} className={cn("px-3 py-1.5 text-sm", view === v ? "bg-primary text-primary-fg" : "hover:bg-surface-2")}>{l}</button>)}
         </div>
-        <Button variant="secondary" aria-label="이전" onClick={() => move(-1)}><ChevronLeft className="h-4 w-4" aria-hidden /></Button>
-        <span className="min-w-40 text-center font-semibold" aria-live="polite" data-testid="cal-title">{title}</span>
-        <Button variant="secondary" aria-label="다음" onClick={() => move(1)}><ChevronRight className="h-4 w-4" aria-hidden /></Button>
+        <div className="flex items-center gap-1">
+          <Button variant="secondary" aria-label="이전" onClick={() => move(-1)}><ChevronLeft className="h-4 w-4" aria-hidden /></Button>
+          <span className="min-w-36 text-center font-semibold" aria-live="polite" data-testid="cal-title">{title}</span>
+          <Button variant="secondary" aria-label="다음" onClick={() => move(1)}><ChevronRight className="h-4 w-4" aria-hidden /></Button>
+        </div>
         <Button variant="ghost" onClick={() => setAnchor(today)}>오늘</Button>
-        <Button className="ml-auto" onClick={() => addAt(anchor)} data-testid="schedule-add"><Plus className="h-4 w-4" aria-hidden />일정 추가</Button>
       </div>
 
       {q.isError ? <Card><ErrorState message="일정을 불러오지 못했어요" onRetry={() => void q.refetch()} /></Card>

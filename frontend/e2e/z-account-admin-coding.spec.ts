@@ -90,9 +90,10 @@ test("환영 팝업 Skip: dismiss 가 기록되고 이후에는 GNB 아래 배�
   await page.goto("/jobs?welcome=1");                                          // 다시 열어도 (dismiss 와 무관하게 URL 이 명시했으므로) 팝업은 열리되 Skip 가능
   await page.getByRole("dialog").getByTestId("welcome-skip").click();
   await page.getByTestId("resume-banner").getByRole("link", { name: /지금 등록하기/ }).click();
-  await expect(page).toHaveURL(/\/mypage\?tab=resume/);
+  await expect(page).toHaveURL(/mypage=resume/);
+  await expect(page.getByRole("dialog", { name: /마이페이지/ })).toBeVisible();
   await expect(page.getByTestId("resume-empty")).toBeVisible();
-  await expect(page.getByTestId("resume-banner")).toHaveCount(0);              // 마이페이지에서는 숨긴다
+  await expect(page.getByTestId("resume-banner")).toHaveCount(0);              // 마이페이지 패널이 열려 있으면 숨긴다
 });
 
 test.describe("마이페이지", () => {
@@ -107,15 +108,47 @@ test.describe("마이페이지", () => {
   });
   test.afterAll(async () => { await ctx.close(); });
 
+  test("사람 아이콘을 누르면 오른쪽 패널로 열리고, ESC·배경 클릭으로 닫히며 포커스가 돌아온다 / 로그인 정보가 표시된다", async () => {
+    await page.goto("/jobs");
+    await expect(page.getByRole("link", { name: "마이페이지" })).toHaveCount(0);                // 로고 옆 마이페이지 링크는 없다
+    const btn = page.getByTestId("account-btn");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await btn.click();
+    const dlg = page.getByRole("dialog", { name: /마이페이지/ });
+    await expect(dlg).toBeVisible();
+    await expect(page).toHaveURL(/\/jobs\?mypage=applications/);
+    await expect(page.getByTestId("drawer-user")).toContainText(d.email);
+    await expect(dlg).toBeFocused();                                                            // 첫 포커스는 패널 자체
+    for (let i = 0; i < 25; i++) {                                                              // Tab 을 아무리 눌러도 패널 밖으로 나가지 않는다 (focus trap)
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => !!document.activeElement?.closest('[role="dialog"]'))).toBe(true);
+    }
+    await expect(page.getByRole("tab", { name: /일정/ })).toHaveCount(0);                        // 비활성 '일정' 탭은 없앴다
+    const box = await dlg.boundingBox();
+    const vw = page.viewportSize()!.width;
+    expect(box!.x + box!.width).toBeGreaterThan(vw - 2);                                        // 오른쪽에 붙는다
+    expect(box!.x).toBeGreaterThan(vw * 0.3);                                                   // 화면 전체를 덮지 않는다(데스크톱)
+    await page.keyboard.press("Escape");
+    await expect(dlg).toBeHidden();
+    await expect(page).not.toHaveURL(/mypage=/);
+    await expect(btn).toBeFocused();
+    await btn.click();
+    await expect(dlg).toBeVisible();
+    await page.mouse.click(20, 300);                                                            // 배경(왼쪽 어두운 영역)
+    await expect(dlg).toBeHidden();
+    await page.goto("/jobs?mypage=profile");                                                    // 딥링크·새로고침으로도 열린다
+    await expect(page.getByRole("tab", { name: "프로필 정보" })).toHaveAttribute("aria-selected", "true");
+  });
+
   test("탭이 URL 에 유지되고, 지원 현황이 없으면 빈 상태를 보여 준다", async () => {
-    await page.goto("/mypage");
+    await page.goto("/mypage");                                                   // 예전 주소는 패널이 열린 공고 목록으로 보낸다
+    await expect(page).toHaveURL(/\/jobs\?mypage=applications/);
     await expect(page.getByRole("tab", { name: "지원 현황" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("아직 지원한 공고가 없어요")).toBeVisible();
     await page.getByRole("tab", { name: "프로필 정보" }).click();
-    await expect(page).toHaveURL(/tab=profile/);
+    await expect(page).toHaveURL(/mypage=profile/);
     await page.reload();
     await expect(page.getByRole("tab", { name: "프로필 정보" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("tab", { name: /일정/ })).toBeDisabled();
   });
 
   test("지원 현황: 지원한 공고가 상태와 다음 액션과 함께 나온다", async () => {
@@ -123,15 +156,15 @@ test.describe("마이페이지", () => {
     const job = jobs.items.find((j: { title: string }) => j.title.startsWith("백엔드"));
     const ap = await page.request.post(`/api/v1/jobs/${job.id}/apply`, { data: { consent: true, consent_version: "2026-01" } });
     expect(ap.ok()).toBe(true);
-    await page.goto("/mypage?tab=applications");
-    const row = page.getByTestId("applications-table").getByRole("row", { name: /백엔드 개발자/ });
+    await page.goto("/jobs?mypage=applications");
+    const row = page.getByTestId("application-item").filter({ hasText: "백엔드 개발자" });
     await expect(row).toContainText("이력서 제출 대기");
     await row.getByRole("link", { name: "이어서 진행하기" }).click();
     await expect(page).toHaveURL(/\/apply\/.+\/resume/);
   });
 
   test("이력서 탭: 미등록 안내 → PDF/직접 작성 선택 → 저장하면 등록본이 생기고, 지원 건 스냅샷은 바뀌지 않는다", async () => {
-    await page.goto("/mypage?tab=resume");
+    await page.goto("/jobs?mypage=resume");
     await expect(page.getByTestId("resume-empty")).toBeVisible();
     await page.getByRole("button", { name: "직접 작성하기" }).click();
     await page.getByLabel("성명").fill("마이페이지이름");
@@ -150,7 +183,7 @@ test.describe("마이페이지", () => {
     await page.route("**/api/v1/me/resume/upload", (r) => r.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ job_id: "mockjob" }) }));
     await page.route("**/api/v1/resume-jobs/mockjob", (r) => r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ status: "done", data: { name: "PDF에서추출", education: [{ school: "추출대학교" }] }, fell_back: false, used_ocr: false, dropped: [] }) }));
-    await page.goto("/mypage?tab=resume");
+    await page.goto("/jobs?mypage=resume");
     await page.getByRole("button", { name: "PDF 교체" }).click();
     await page.getByTestId("pdf-input").setInputFiles({ name: "r.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 x") });
     await expect(page.getByTestId("extracted-banner")).toBeVisible();
@@ -163,7 +196,7 @@ test.describe("마이페이지", () => {
   });
 
   test("프로필: 이름·연락처 수정, 비밀번호 변경(현재 비밀번호 불일치 오류)", async () => {
-    await page.goto("/mypage?tab=profile");
+    await page.goto("/jobs?mypage=profile");
     await expect(page.getByText("1998-05-05 · 남")).toBeVisible();
     await page.getByLabel("이름", { exact: true }).fill("새이름");
     await page.getByLabel("연락처").fill("010-9999-8888");
@@ -183,8 +216,19 @@ test.describe("마이페이지", () => {
     expect(relog.status()).toBe(200);
   });
 
+  test("패널 하단의 로그아웃은 세션을 끊고 로그인 화면으로 보낸다", async ({ browser }) => {
+    const c2 = await browser.newContext();
+    const p2 = await c2.newPage();
+    await p2.request.post("/api/v1/auth/login", { data: { email: d.email, password: "NewPassw0rd!", role: "applicant" } });
+    await p2.goto("/jobs?mypage=applications");
+    await p2.getByTestId("logout-btn").click();
+    await expect(p2).toHaveURL(/\/login/);
+    expect((await p2.request.get("/api/v1/me")).status()).toBe(401);
+    await c2.close();
+  });
+
   test("회원 탈퇴: 틀린 비밀번호는 거부, 맞으면 계정·데이터가 삭제되고 다시 로그인할 수 없다", async () => {
-    await page.goto("/mypage?tab=profile");
+    await page.goto("/jobs?mypage=profile");
     await page.getByTestId("delete-account").click();
     const dlg = page.getByRole("dialog", { name: "정말 삭제할까요?" });
     await dlg.getByLabel("비밀번호").fill("Wrong123!");

@@ -64,6 +64,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[15rem_1fr]">
+      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:shadow">본문 바로가기</a>
       <aside className="sticky top-0 hidden h-screen border-r border-border bg-surface lg:block">{sidebar}</aside>
       {drawer && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="메뉴">
@@ -94,7 +95,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         {metrics.data?.pressure === "critical" && (
           <p role="alert" className="border-b border-danger/30 bg-danger-bg px-4 py-2 text-sm text-danger">서버 메모리가 부족합니다. 진행 중 면접에 영향이 있을 수 있어요.</p>
         )}
-        <main className="mx-auto max-w-[1280px] p-4 lg:p-6">{children}</main>
+        <main id="main" tabIndex={-1} className="mx-auto max-w-[1280px] p-4 focus-visible:outline-none lg:p-6">{children}</main>
       </div>
     </div>
   );

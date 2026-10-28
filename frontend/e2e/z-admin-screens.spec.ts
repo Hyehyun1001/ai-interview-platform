@@ -147,3 +147,14 @@ test("지원자 목록: 통합 목록의 정렬·필터·비교 모드, 공고�
   await expect(page).toHaveURL(/tab=notes/);
   await expect(page.getByTestId("notes-tab")).toBeVisible();
 });
+
+test("좁은 화면(모바일)에서는 캘린더가 리스트 보기로 열리고, 일정 추가 버튼이 보인다", async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  await login(page, "hr@corp.local", "recruiter");
+  await page.goto("/admin/calendar");
+  await expect(page.getByRole("button", { name: "리스트" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("schedule-add")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);   // 가로 스크롤이 생기지 않는다
+  await ctx.close();
+});
