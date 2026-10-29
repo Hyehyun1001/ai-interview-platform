@@ -30,7 +30,7 @@ export default defineConfig({
     },
     {
       command: `npm run dev -- -p ${WEB_PORT}`, url: `http://127.0.0.1:${WEB_PORT}/login`, reuseExistingServer: true, timeout: 120_000,
-      env: { NEXT_DIST_DIR: process.env.E2E_WEB_PORT ? `.next-e2e-${WEB_PORT}` : ".next", BACKEND_URL: `http://127.0.0.1:${API_PORT}`, NEXT_PUBLIC_WS_URL: `ws://127.0.0.1:${API_PORT}` },
+      env: { NEXT_DIST_DIR: process.env.E2E_WEB_PORT ? `.next-e2e-${WEB_PORT}` : ".next", BACKEND_URL: `http://127.0.0.1:${API_PORT}`, NEXT_PUBLIC_WS_URL: `ws://127.0.0.1:${API_PORT}`, NEXT_PUBLIC_AUTOSAVE_MS: process.env.E2E_AUTOSAVE_MS ?? "1500" },
     },
   ],
 });

@@ -10,6 +10,8 @@ import { EMPLOYMENT_OPTIONS } from "@/features/jobs/logic";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { AutosaveBadge } from "./autosave-badge";
+import { clearNewJobBackup, readNewJobBackup, useAutosave, writeNewJobBackup, type AutosaveInfo } from "./autosave";
 import { applyTemplate, closeJob, createJob, createTemplate, listTemplates, noteKeys, useMetrics, generateBank, getBank, getJob, jobKeys, publishJob, putFollowup, putQuestions, putWeights, updateJob, type JobOut } from "../api";
 import { DEFAULT_WEIGHTS, MAX_QUESTIONS, WEIGHT_KEYS, WEIGHT_LABELS, buildChecklist, canPublish, cutoffBands, equalWeights, isForbiddenQuestion, lockCodeQuality,
   weightsDelta, weightsSum, type WeightKey } from "./wizard-logic";
@@ -29,13 +31,29 @@ export function JobWizard({ jobId }: { jobId?: string }) {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [tplOpen, setTplOpen] = useState(false);
+  const [auto, setAuto] = useState<AutosaveInfo | null>(null);  // 현재 단계의 자동 저장 상태 (단계 컴포넌트가 올려 준다)
+  const [epoch, setEpoch] = useState(0);  // 템플릿 적용처럼 서버 쪽 내용이 통째로 바뀔 때만 올려 단계 입력 상태를 다시 만든다(자동 저장은 올리지 않는다)
+
+  // 저장되지 않은 변경이 있으면 새로고침·탭 닫기 전에 경고한다
+  useEffect(() => {
+    if (!auto?.dirty) return;
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", h);
+    return () => window.removeEventListener("beforeunload", h);
+  }, [auto?.dirty]);
 
   const refresh = (j: JobOut) => { qc.setQueryData(jobKeys.one(j.id), j); void qc.invalidateQueries({ queryKey: jobKeys.list }); setSavedAt(new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })); };
   async function run<T>(fn: () => Promise<T>): Promise<T | null> {
     setSaving(true);
     try { return await fn(); } catch (e) { toast.error(errMsg(e)); return null; } finally { setSaving(false); }
   }
-  const go = (n: number) => { setStep(n); if (jobId) router.replace(`/admin/jobs/${jobId}/edit?step=${n}`); };
+  /** 단계 이동 전에 저장되지 않은 변경이 있으면 임시 저장한다(실패하면 이동하지 않는다 — 입력을 잃지 않게). */
+  /** `saved`: 방금 직접 저장했으면(저장하고 다음) 한 번 더 저장하지 않는다 — 부모가 가진 auto 는 아직 직전 렌더의 값이다. */
+  const go = async (n: number, saved = false) => {
+    if (!saved && auto?.enabled && auto.dirty && auto.canSave && !(await auto.saveNow())) { toast.error("임시 저장에 실패해 이동하지 않았어요. 다시 시도해 주세요"); return; }
+    setStep(n);
+    if (jobId) router.replace(`/admin/jobs/${jobId}/edit?step=${n}`);
+  };
 
   if (jobId && q.isPending) return <Skeleton className="h-96" />;
   if (jobId && q.isError) return <Card><ErrorState message="공고를 불러오지 못했어요" onRetry={() => void q.refetch()} /></Card>;
@@ -46,29 +64,32 @@ export function JobWizard({ jobId }: { jobId?: string }) {
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">{job ? job.title : "신규 공고 작성"}</h1>
         {job && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs">{job.status === "draft" ? "임시 저장" : job.status === "open" ? "게시 중" : "마감"}</span>}
-        <span className="ml-auto text-xs text-muted" aria-live="polite">{savedAt ? `임시 저장됨 ${savedAt}` : ""}</span>
+        <span className="ml-auto" aria-live="polite">{auto && (auto.dirty || auto.savedAt || auto.phase !== "idle") ? <AutosaveBadge info={auto} /> : <span className="text-xs text-muted">{savedAt ? `임시 저장됨 ${savedAt}` : ""}</span>}</span>
         {job?.status === "draft" && <Button variant="secondary" onClick={() => setTplOpen(true)} data-testid="template-load">템플릿 불러오기</Button>}
         {job && <Link href={`/admin/jobs/${job.id}/preview`} target="_blank" rel="noopener"><Button variant="secondary" data-testid="preview-btn">미리보기</Button></Link>}
       </div>
-      {job && <TemplateDialog open={tplOpen} jobId={job.id} onClose={() => setTplOpen(false)} onApplied={(j) => { refresh(j); setTplOpen(false); toast.success("템플릿을 불러왔어요"); go(2); }} />}
+      {job && <TemplateDialog open={tplOpen} jobId={job.id} onClose={() => setTplOpen(false)} onApplied={(j) => { refresh(j); setEpoch((n) => n + 1); setTplOpen(false); toast.success("템플릿을 불러왔어요"); void go(2); }} />}
       <ol className="flex flex-wrap gap-2" aria-label="진행 단계">
         {STEPS.map((s, i) => (
-          <li key={s}><button type="button" disabled={!jobId && i > 0} aria-current={step === i + 1 ? "step" : undefined} onClick={() => go(i + 1)}
+          <li key={s}><button type="button" disabled={!jobId && i > 0} aria-current={step === i + 1 ? "step" : undefined} onClick={() => void go(i + 1)}
             className={cn("rounded border px-3 py-1.5 text-sm", step === i + 1 ? "border-primary bg-primary/10 font-semibold" : "border-border text-muted", "disabled:opacity-40")}>{i + 1}. {s}</button></li>
         ))}
       </ol>
       {closed && <p role="status" className="rounded bg-warning-bg p-3 text-sm text-warning">마감된 공고는 수정할 수 없습니다.</p>}
       <Card className="p-5">
-        {step === 1 && <Step1 job={job} disabled={closed} saving={saving} onSave={async (body) => {
-          const j = await run(() => (job ? updateJob(job.id, { ...body, updated_at: job.updated_at }) : createJob(body)));
-          if (!j) return;
-          refresh(j);
-          if (!job) router.replace(`/admin/jobs/${j.id}/edit?step=2`); else go(2);
-          setStep(2);
-        }} />}
-        {step === 2 && job && <Step2 key={job.updated_at} job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onNext={() => go(3)} onPrev={() => go(1)} />}
-        {step === 3 && job && <Step3 key={job.updated_at} job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onNext={() => go(4)} onPrev={() => go(2)} />}
-        {step === 4 && job && <Step4 job={job} disabled={closed} saving={saving} run={run} go={go} onPublished={(j) => { refresh(j); toast.success("공고를 게시했어요"); router.push("/admin/jobs"); }}
+        {step === 1 && <Step1 key={epoch} job={job} disabled={closed} saving={saving} onAuto={setAuto}
+          onAutoSave={async (body) => { if (job) refresh(await updateJob(job.id, { ...body, updated_at: job.updated_at })); }}
+          onSave={async (body) => {
+            const j = await run(() => (job ? updateJob(job.id, { ...body, updated_at: job.updated_at }) : createJob(body)));
+            if (!j) return false;
+            refresh(j);
+            if (!job) { clearNewJobBackup(); router.replace(`/admin/jobs/${j.id}/edit?step=2`); } else await go(2);
+            setStep(2);
+            return true;
+          }} />}
+        {step === 2 && job && <Step2 key={epoch} job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onAuto={setAuto} onNext={() => void go(3, true)} onPrev={() => void go(1)} />}
+        {step === 3 && job && <Step3 key={epoch} job={job} disabled={closed} saving={saving} onChange={refresh} run={run} onAuto={setAuto} onNext={() => void go(4, true)} onPrev={() => void go(2)} />}
+        {step === 4 && job && <Step4 job={job} disabled={closed} saving={saving} run={run} go={(n) => void go(n)} onPublished={(j) => { refresh(j); toast.success("공고를 게시했어요"); router.push("/admin/jobs"); }}
           onClosed={(j) => { refresh(j); toast.success("공고를 마감했어요"); }} />}
         {step > 1 && !job && <p className="text-sm text-muted">먼저 기본 정보를 저장해 주세요.</p>}
       </Card>
@@ -77,7 +98,7 @@ export function JobWizard({ jobId }: { jobId?: string }) {
 }
 
 type RunFn = <T>(fn: () => Promise<T>) => Promise<T | null>;
-interface StepProps { job: JobOut; disabled: boolean; saving: boolean; onChange: (j: JobOut) => void; run: RunFn; onNext: () => void; onPrev: () => void }
+interface StepProps { job: JobOut; disabled: boolean; saving: boolean; onChange: (j: JobOut) => void; run: RunFn; onAuto: (a: AutosaveInfo | null) => void; onNext: () => void; onPrev: () => void }
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return <label className="block text-sm"><span className="mb-1 block font-medium">{label}</span>{children}{hint && <span className="mt-1 block text-xs text-muted">{hint}</span>}</label>;
@@ -101,11 +122,39 @@ function Area({ label, hint, value, onChange, disabled, max, rows = 5, badge, te
 const AI_BADGE = <span className="rounded bg-info-bg px-1.5 py-0.5 text-[11px] font-normal text-info" title="이 항목은 AI 면접 질문을 만드는 근거(JD)로 쓰여요">AI 질문 근거</span>;
 const VIEW_BADGE = <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-normal text-muted" title="지원자 화면에만 표시되고 AI 질문 생성에는 쓰이지 않아요">표시용</span>;
 
-function Step1({ job, disabled, saving, onSave }: { job?: JobOut; disabled: boolean; saving: boolean; onSave: (b: Record<string, unknown>) => Promise<void> }) {
+const toBody = (f: Record<string, string | number>) => ({
+  title: String(f.title).trim(), job_category: f.job_category || null, headcount: f.headcount === "" ? null : Number(f.headcount), deadline_at: f.deadline ? new Date(String(f.deadline)).toISOString() : null,
+  duties: f.duties || null, requirements: f.requirements || null, preferred: f.preferred || null, contact_email: f.contact_email || null,
+  employment_type: f.employment_type || null, work_location: String(f.work_location).trim() || null, salary_text: String(f.salary_text).trim() || null, benefits: f.benefits || null, notice: f.notice || null,
+});
+
+function Step1({ job, disabled, saving, onSave, onAutoSave, onAuto }: {
+  job?: JobOut; disabled: boolean; saving: boolean; onSave: (b: Record<string, unknown>) => Promise<boolean>;
+  onAutoSave: (b: Record<string, unknown>) => Promise<void>; onAuto: (a: AutosaveInfo | null) => void;
+}) {
   const [f, setF] = useState({ title: job?.title ?? "", job_category: job?.job_category ?? "", headcount: job?.headcount ?? ("" as number | ""), deadline: toLocal(job?.deadline_at),
     duties: job?.duties ?? "", requirements: job?.requirements ?? "", preferred: job?.preferred ?? "", contact_email: job?.contact_email ?? "",
     employment_type: job?.employment_type ?? "", work_location: job?.work_location ?? "", salary_text: job?.salary_text ?? "", benefits: job?.benefits ?? "", notice: job?.notice ?? "" });
   const [showPreview, setShowPreview] = useState(false);
+  const [restored, setRestored] = useState<string | null>(null);
+  // 임시 저장 중인 공고(draft)만 서버에 자동 저장한다. 게시된 공고를 말없이 바꾸지 않는다.
+  const auto = useAutosave({ signature: JSON.stringify(f), enabled: !!job && job.status === "draft" && !disabled, canSave: f.title.trim() !== "",
+    save: () => onAutoSave(toBody(f)) });
+  useEffect(() => { onAuto({ phase: auto.phase, dirty: auto.dirty, enabled: auto.enabled, canSave: auto.canSave, savedAt: auto.savedAt, saveNow: auto.saveNow }); }, [auto.phase, auto.dirty, auto.enabled, auto.canSave, auto.savedAt, auto.saveNow, onAuto]);
+  useEffect(() => () => onAuto(null), [onAuto]);
+
+  // 아직 서버에 없는 새 공고: 입력을 이 브라우저에 백업하고, 새로고침 후 돌아오면 복원한다 (첫 저장 때 지운다)
+  useEffect(() => {
+    if (job) return;
+    const b = readNewJobBackup<typeof f>();
+    if (b) { setF({ ...b.form }); setRestored(new Date(b.savedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (job || !auto.dirty) return;
+    const t = setTimeout(() => writeNewJobBackup(f), 600);
+    return () => clearTimeout(t);
+  }, [f, job, auto.dirty]);
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value });
   const text = (k: keyof typeof f) => (v: string) => setF({ ...f, [k]: v });
   const past = f.deadline !== "" && new Date(f.deadline).getTime() <= Date.now();
@@ -118,10 +167,14 @@ function Step1({ job, disabled, saving, onSave }: { job?: JobOut; disabled: bool
   };
   return (
     <form className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_25rem]" onSubmit={(e) => { e.preventDefault(); if (!f.title.trim()) { toast.error("공고 제목을 입력해 주세요"); return; }
-      void onSave({ title: f.title.trim(), job_category: f.job_category || null, headcount: f.headcount === "" ? null : Number(f.headcount), deadline_at: f.deadline ? new Date(f.deadline).toISOString() : null,
-        duties: f.duties || null, requirements: f.requirements || null, preferred: f.preferred || null, contact_email: f.contact_email || null,
-        employment_type: f.employment_type || null, work_location: f.work_location.trim() || null, salary_text: f.salary_text.trim() || null, benefits: f.benefits || null, notice: f.notice || null }); }}>
+      void onSave(toBody(f)).then((ok) => { if (ok) auto.markSaved(); }); }}>
       <div className="min-w-0 space-y-6">
+        {restored && (
+          <p role="status" className="flex flex-wrap items-center gap-3 rounded bg-info-bg p-3 text-sm text-info" data-testid="draft-restored">
+            작성 중이던 내용({restored})을 이 브라우저에서 복원했어요. 아직 저장되지 않은 상태입니다.
+            <button type="button" className="font-semibold underline" onClick={() => { clearNewJobBackup(); setRestored(null); setF({ title: "", job_category: "", headcount: "", deadline: "", duties: "", requirements: "", preferred: "", contact_email: "", employment_type: "", work_location: "", salary_text: "", benefits: "", notice: "" }); }}>지우고 새로 작성</button>
+          </p>
+        )}
         <fieldset className="space-y-4">
           <legend className="mb-1 text-base font-bold">기본 정보</legend>
           <Field label="공고 제목 *" hint="공고명에는 '코딩테스트 포함' 같은 안내를 넣지 않아도 돼요. 코딩테스트 여부는 2단계 설정이 지원자 화면에 자동으로 표시됩니다."><input className={input} value={f.title} onChange={set("title")} disabled={disabled} maxLength={200} /></Field>
@@ -165,7 +218,7 @@ function Step1({ job, disabled, saving, onSave }: { job?: JobOut; disabled: bool
 
 interface Row { text: string; category: string; time: string }
 
-function Step2({ job, disabled, saving, onChange, run, onNext, onPrev }: StepProps) {
+function Step2({ job, disabled, saving, onChange, run, onAuto, onNext, onPrev }: StepProps) {
   const metrics = useMetrics();
   const sandboxOff = metrics.data?.sandbox_enabled === false;  // 실행 환경이 꺼져 있으면 코딩테스트를 켤 수 없다 (UI_SPEC §4.7)
   const [coding, setCoding] = useState(job.coding_test_enabled);
@@ -177,14 +230,22 @@ function Step2({ job, disabled, saving, onChange, run, onNext, onPrev }: StepPro
   const filled = rows.filter((r) => r.text.trim());
   const forbidden = rows.map((r) => isForbiddenQuestion(r.text));
 
+  /** 설정 → 질문 세트 순으로 저장하고 서버의 최신 공고(updated_at 포함)를 다시 받는다. 질문 저장이 updated_at 을 다시 올리므로 응답을 그대로 쓰면 다음 저장이 STALE_UPDATE 로 막힌다. */
+  async function persist() {
+    await updateJob(job.id, { answer_time_limit_sec: Number(limit) || null, coding_test_enabled: coding, coding_test_time_limit_sec: coding ? Number(codingMin) * 60 : null, updated_at: job.updated_at });
+    await putQuestions(job.id, filled.map((r) => ({ text: r.text.trim(), category: r.category || null, time_limit_sec: r.time ? Number(r.time) : null })));
+    onChange(await getJob(job.id));
+  }
+  const valid = !(coding && !Number(codingMin)) && !forbidden.some(Boolean);
+  const auto = useAutosave({ signature: JSON.stringify({ coding, codingMin, limit, rows }), enabled: job.status === "draft" && !disabled, canSave: valid, save: persist });
+  useEffect(() => { onAuto({ phase: auto.phase, dirty: auto.dirty, enabled: auto.enabled, canSave: auto.canSave, savedAt: auto.savedAt, saveNow: auto.saveNow }); }, [auto.phase, auto.dirty, auto.enabled, auto.canSave, auto.savedAt, auto.saveNow, onAuto]);
+  useEffect(() => () => onAuto(null), [onAuto]);
   async function save() {
     if (coding && !Number(codingMin)) { toast.error("코딩테스트 제한시간을 입력해 주세요"); return false; }
     if (forbidden.some(Boolean)) { toast.error("채용 공정성 정책에 따라 사용할 수 없는 질문이 있어요"); return false; }
-    const a = await run(() => updateJob(job.id, { answer_time_limit_sec: Number(limit) || null, coding_test_enabled: coding, coding_test_time_limit_sec: coding ? Number(codingMin) * 60 : null, updated_at: job.updated_at }));
-    if (!a) return false;
-    const ok = await run(() => putQuestions(job.id, filled.map((r) => ({ text: r.text.trim(), category: r.category || null, time_limit_sec: r.time ? Number(r.time) : null }))));
-    if (!ok) return false;
-    onChange({ ...a, questions: ok.map((x) => x), updated_at: a.updated_at } as JobOut);
+    const done = await run(async () => { await persist(); return true; });
+    if (!done) return false;
+    auto.markSaved();
     void bank.refetch();
     return true;
   }
@@ -227,8 +288,8 @@ function Step2({ job, disabled, saving, onChange, run, onNext, onPrev }: StepPro
   );
 }
 
-function Step3({ job, disabled, saving, onChange, run, onNext, onPrev }: StepProps) {
-  const [w, setW] = useState<Record<WeightKey, number>>({ ...DEFAULT_WEIGHTS, ...job.weights.weights });
+function Step3({ job, disabled, saving, onChange, run, onAuto, onNext, onPrev }: StepProps) {
+  const [w, setW] = useState<Record<WeightKey, number>>(() => lockCodeQuality({ ...DEFAULT_WEIGHTS, ...job.weights.weights }, job.coding_test_enabled));  // 처음부터 잠금 규칙을 적용해 열자마자 '변경됨'으로 보이지 않게
   const [gaze, setGaze] = useState(job.weights.gaze_penalty_enabled);
   const [cutoff, setCutoff] = useState(job.weights.cutoff_score == null ? "" : String(job.weights.cutoff_score));
   const [margin, setMargin] = useState(String(job.weights.cutoff_margin));
@@ -237,13 +298,19 @@ function Step3({ job, disabled, saving, onChange, run, onNext, onPrev }: StepPro
   const sum = weightsSum(w), delta = weightsDelta(w);
   const bands = useMemo(() => cutoffBands(cutoff === "" ? null : Number(cutoff), Number(margin) || 0), [cutoff, margin]);
   useEffect(() => { setW((cur) => lockCodeQuality(cur, coding)); }, [coding]);
+  async function persist() {
+    await putWeights(job.id, { weights: w, gaze_penalty_enabled: gaze, cutoff_score: cutoff === "" ? null : Number(cutoff), cutoff_margin: Number(margin) || 0 });
+    await putFollowup(job.id, fr);
+    onChange(await getJob(job.id));  // 저장이 updated_at 을 올리므로 최신 값을 다시 받는다
+  }
+  const auto = useAutosave({ signature: JSON.stringify({ w, gaze, cutoff, margin, fr }), enabled: job.status === "draft" && !disabled, canSave: sum === 100, save: persist });
+  useEffect(() => { onAuto({ phase: auto.phase, dirty: auto.dirty, enabled: auto.enabled, canSave: auto.canSave, savedAt: auto.savedAt, saveNow: auto.saveNow }); }, [auto.phase, auto.dirty, auto.enabled, auto.canSave, auto.savedAt, auto.saveNow, onAuto]);
+  useEffect(() => () => onAuto(null), [onAuto]);
   async function save() {
     if (sum !== 100) return false;
-    const a = await run(() => putWeights(job.id, { weights: w, gaze_penalty_enabled: gaze, cutoff_score: cutoff === "" ? null : Number(cutoff), cutoff_margin: Number(margin) || 0 }));
-    if (!a) return false;
-    const b = await run(() => putFollowup(job.id, fr));
-    if (!b) return false;
-    onChange({ ...job, weights: a, followup_rules: b });
+    const done = await run(async () => { await persist(); return true; });
+    if (!done) return false;
+    auto.markSaved();
     return true;
   }
   return (
