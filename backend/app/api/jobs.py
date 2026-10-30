@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
-from app.core.deps import get_db, get_settings_dep, require_role
+from app.core.deps import get_db, get_optional_user, get_settings_dep, require_role
 from app.core.errors import ApiError
 from app.models import Application, Company, EvaluationReport, FollowupRule, InterviewSession, JobPosting, Notification, User
 from app.models.base import utcnow
@@ -33,7 +33,7 @@ def _summary(job: JobPosting, company: str, applied: bool) -> JobSummary:
 
 @router.get("/jobs", response_model=JobList)
 async def list_jobs(category: str | None = None, q: str | None = Query(default=None, max_length=100), page: int = Query(1, ge=1),
-                    limit: int = Query(20, ge=1, le=100), user: User = Depends(require_role(UserRole.APPLICANT)),
+                    limit: int = Query(20, ge=1, le=100), user: User | None = Depends(get_optional_user),
                     db: AsyncSession = Depends(get_db)) -> JobList:
     cond = list(_open_filter())
     if category:
@@ -46,12 +46,14 @@ async def list_jobs(category: str | None = None, q: str | None = Query(default=N
         select(JobPosting, Company.name).join(Company, Company.id == JobPosting.company_id).where(*cond)
         .order_by(JobPosting.deadline_at.is_(None), JobPosting.deadline_at, JobPosting.created_at.desc())
         .offset((page - 1) * limit).limit(limit))).all()
-    applied = set((await db.execute(select(Application.job_id).where(Application.user_id == user.id))).scalars())
+    applied = set()
+    if user is not None:  # 비로그인 열람 허용 (지원만 로그인 필요)
+        applied = set((await db.execute(select(Application.job_id).where(Application.user_id == user.id))).scalars())
     return JobList(items=[_summary(j, c, j.id in applied) for j, c in rows], page=page, limit=limit, total=total)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetail)
-async def get_job(job_id: uuid.UUID, user: User = Depends(require_role(UserRole.APPLICANT)), db: AsyncSession = Depends(get_db),
+async def get_job(job_id: uuid.UUID, user: User | None = Depends(get_optional_user), db: AsyncSession = Depends(get_db),
                   settings: Settings = Depends(get_settings_dep)) -> JobDetail:
     row = (await db.execute(select(JobPosting, Company.name).join(Company, Company.id == JobPosting.company_id)
                             .where(JobPosting.id == job_id, JobPosting.status.in_([JobStatus.OPEN, JobStatus.CLOSED])))).first()
@@ -59,7 +61,9 @@ async def get_job(job_id: uuid.UUID, user: User = Depends(require_role(UserRole.
         raise ApiError(404, "NOT_FOUND", "공고를 찾을 수 없습니다")
     job, company = row
     await db.execute(update(JobPosting).where(JobPosting.id == job.id).values(view_count=JobPosting.view_count + 1, updated_at=JobPosting.updated_at))  # 조회수는 담당자의 편집 기준(updated_at)을 바꾸지 않는다
-    app_id = (await db.execute(select(Application.id).where(Application.user_id == user.id, Application.job_id == job.id))).scalar_one_or_none()
+    app_id = None
+    if user is not None:
+        app_id = (await db.execute(select(Application.id).where(Application.user_id == user.id, Application.job_id == job.id))).scalar_one_or_none()
     await db.commit()
     rules = (await db.execute(select(FollowupRule).where(FollowupRule.job_id == job.id))).scalar_one_or_none()
     base = _summary(job, company, app_id is not None)

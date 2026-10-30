@@ -88,7 +88,21 @@ async def test_apply_to_closed_or_expired_job_is_rejected_and_staff_cannot_apply
         assert (await c.get(f"{API}/jobs")).json()["items"] == []
     async with rest.client() as hr:
         await rest.login(hr, "hr@corp.local", "recruiter")
-        assert (await hr.get(f"{API}/jobs")).status_code == 403
+        assert (await hr.get(f"{API}/jobs")).status_code == 200  # 공고 열람은 공개
+        assert (await hr.post(f"{API}/jobs/{closed.id}/apply", json=CONSENT)).status_code == 403  # 지원은 지원자만
+
+
+async def test_jobs_are_public_but_apply_requires_login(rest):
+    async with rest.client() as c:
+        co, _ = await rest.company_with_recruiter()
+        job = await rest.job(co.id)
+        listed = await c.get(f"{API}/jobs")
+        assert listed.status_code == 200 and [i["id"] for i in listed.json()["items"]] == [str(job.id)]
+        assert listed.json()["items"][0]["applicant_applied"] is False
+        detail = await c.get(f"{API}/jobs/{job.id}")
+        assert detail.status_code == 200 and detail.json()["application_id"] is None
+        assert (await c.post(f"{API}/jobs/{job.id}/apply", json=CONSENT)).status_code == 401
+        assert (await c.get(f"{API}/me/applications")).status_code == 401
 
 
 async def test_result_is_hidden_until_notified(rest):

@@ -10,6 +10,16 @@ import { homeFor, useMe, type UserRole } from "./api";
  * 영역별 접근 가드. 미들웨어는 HttpOnly refresh 쿠키(경로 제한)를 볼 수 없으므로, 만료된 access 토큰은 여기서
  * apiFetch 의 자동 갱신으로 복구하고 실패하면 로그인으로 보낸다. 최종 권한 판단은 항상 API(RBAC)가 한다.
  */
+/** 공고 목록·상세는 비로그인도 열람 가능 (지원·마이페이지 등은 가드). */
+export const isPublicApplicantPath = (pathname: string) => pathname === "/jobs" || /^\/jobs\/[^/]+$/.test(pathname);
+
+/** 지원자 영역 가드: 공개 경로는 통과, 나머지는 AuthGuard. */
+export function ApplicantAreaGuard({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  if (isPublicApplicantPath(pathname)) return <>{children}</>;
+  return <AuthGuard allow={["applicant"]}>{children}</AuthGuard>;
+}
+
 export function AuthGuard({ allow, children }: { allow: UserRole[]; children: ReactNode }) {
   const { data: me, error, isLoading } = useMe();
   const router = useRouter();

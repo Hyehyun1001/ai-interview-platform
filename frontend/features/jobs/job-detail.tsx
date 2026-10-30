@@ -9,6 +9,7 @@ import { JobBody } from "./job-view";
 import { ApiError } from "@/lib/api/client";
 import { toast } from "@/lib/toast";
 import { ddayLabel } from "@/lib/utils";
+import { useMe } from "@/features/auth/api";
 import { MY_APPS_KEY, applyToJob, fetchMyApplications, useJob, useMyApplications, type JobDetail } from "@/features/applicant/api";
 import { ConsentDialog } from "./consent-dialog";
 import { CONSENT_VERSION, continueTarget, isDeadlinePassed } from "./logic";
@@ -28,6 +29,8 @@ export function JobDetailView({ jobId }: { jobId: string }) {
 function Loaded({ job }: { job: JobDetail }) {
   const router = useRouter();
   const qc = useQueryClient();
+  const me = useMe();
+  const loggedIn = !!me.data;
   const mine = useMyApplications();
   const myApp = (mine.data ?? []).find((a) => a.job.id === job.id);
   const [open, setOpen] = useState(false);
@@ -68,7 +71,9 @@ function Loaded({ job }: { job: JobDetail }) {
     ? <Button onClick={() => router.push(continueTarget(myApp).href)} className={full}>{continueTarget(myApp).label}</Button>
     : closed
       ? <Button disabled className={full}>모집이 마감되었습니다</Button>
-      : <Button onClick={() => { setErr(null); setOpen(true); }} className={full} data-testid="apply-btn">지원하기 / AI 면접 진행</Button>;
+      : !loggedIn && !me.isLoading
+        ? <Button onClick={() => router.push(`/login?next=${encodeURIComponent(`/jobs/${job.id}`)}`)} className={full} data-testid="login-to-apply-btn">로그인하고 지원하기</Button>
+        : <Button onClick={() => { setErr(null); setOpen(true); }} className={full} data-testid="apply-btn">지원하기 / AI 면접 진행</Button>;
 
   return (
     <div className="space-y-4">

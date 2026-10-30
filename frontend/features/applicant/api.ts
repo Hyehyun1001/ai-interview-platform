@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { ApiError, apiFetch, parseError } from "@/lib/api/client";
+import { useMe } from "@/features/auth/api";
 import type { components } from "@/types/api";
 import type { ResumeData } from "@/features/resume/schema";
 
@@ -31,7 +32,11 @@ export const useJob = (id: string) =>
 
 export const MY_APPS_KEY = ["me", "applications"] as const;
 export const fetchMyApplications = () => apiFetch<MyApplication[]>(`${V1}/me/applications`);
-export const useMyApplications = () => useQuery({ queryKey: MY_APPS_KEY, queryFn: fetchMyApplications, staleTime: 5_000 });
+/** 로그인 상태에서만 조회한다 (공고 열람은 비로그인 허용). */
+export const useMyApplications = () => {
+  const me = useMe();
+  return useQuery({ queryKey: MY_APPS_KEY, queryFn: fetchMyApplications, staleTime: 5_000, enabled: !!me.data });
+};
 
 export const applyToJob = (jobId: string, consentVersion: string) =>
   apiFetch<S["ApplyResponse"]>(`${V1}/jobs/${jobId}/apply`, { method: "POST", json: { consent: true, consent_version: consentVersion } });
@@ -45,7 +50,10 @@ export async function fetchMyResume(): Promise<ResumeOut | null> {
     throw e;
   }
 }
-export const useMyResume = () => useQuery({ queryKey: RESUME_KEY, queryFn: fetchMyResume, retry: false });
+export const useMyResume = () => {
+  const me = useMe();
+  return useQuery({ queryKey: RESUME_KEY, queryFn: fetchMyResume, retry: false, enabled: !!me.data });
+};
 
 export const saveMyResume = (data: ResumeData) => apiFetch<ResumeOut>(`${V1}/me/resume`, { method: "PUT", json: data });
 export const confirmApplicationResume = (applicationId: string, source: "mypage" | "upload" | "manual", data?: ResumeData) =>

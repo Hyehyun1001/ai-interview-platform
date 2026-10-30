@@ -1,6 +1,7 @@
 "use client";
 import { useQueryClient } from "@tanstack/react-query";
 import { LogOut, UserRound } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/primitives";
 import { Drawer } from "@/components/ui/drawer";
@@ -14,7 +15,7 @@ export function MyPageDrawer() {
   const pathname = usePathname();
   const router = useRouter();
   const qc = useQueryClient();
-  const { data: me } = useMe();
+  const { data: me, isLoading } = useMe();
   const tab = parseMyPageTab(sp.get("mypage"));
 
   const go = (next: MyPageTab | null) => {
@@ -30,6 +31,9 @@ export function MyPageDrawer() {
     router.replace("/login");
   };
 
+  if (!me && !isLoading) {  // 비로그인: 공고는 열람 가능, 로그인 버튼만 노출
+    return <Link href={`/login?next=${encodeURIComponent(pathname)}`} data-testid="gnb-login" className="inline-flex h-10 items-center rounded-full bg-primary px-4 text-sm font-semibold text-primary-fg hover:opacity-90">로그인</Link>;
+  }
   return (
     <>
       <button type="button" onClick={() => go(tab ? null : "applications")} aria-haspopup="dialog" aria-expanded={tab !== null} aria-label="마이페이지 열기" data-testid="account-btn"

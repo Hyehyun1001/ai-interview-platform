@@ -44,6 +44,14 @@ async def get_current_user(request: Request, db: AsyncSession = Depends(get_db))
     return user
 
 
+async def get_optional_user(request: Request, db: AsyncSession = Depends(get_db)) -> User | None:
+    """공개 조회용: 로그인 정보가 없거나 유효하지 않으면 401 대신 None."""
+    try:
+        return await get_current_user(request, db)
+    except ApiError:
+        return None
+
+
 def require_role(*roles: UserRole) -> Callable[..., User]:
     async def _dep(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
