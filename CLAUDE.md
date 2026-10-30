@@ -1,4 +1,4 @@
-# Enterprise On-Premise AI Interview Platform
+# AuraEval AI — Enterprise On-Premise AI Interview Platform
 
 ## System Architecture & Constraints
 - Platform: Local On-Premise B2B AI Mock Interview Platform

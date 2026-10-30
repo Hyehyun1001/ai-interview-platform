@@ -109,7 +109,7 @@ test("관리자 화면 4장: ADM-01/03/05/06", async ({ browser }) => {
   const qs = ["최근 진행한 프로젝트에서 맡은 역할과 성과를 설명해 주세요", "트랜잭션 격리 수준을 선택한 경험을 말씀해 주세요", "장애를 해결했던 경험을 설명해 주세요", "Redis 캐시 무효화 전략을 어떻게 설계하시겠어요?"];
   expect((await page.request.put(`/api/v1/admin/jobs/${j.id}/questions`, { data: { items: qs.map((text) => ({ text })) } })).ok()).toBe(true);
   await page.goto(`/admin/jobs/${j.id}/edit?step=2`);
-  await expect(page.getByLabel("질문 1", { exact: true })).toHaveValue(qs[0]);
+  await expect(page.getByLabel("질문 1", { exact: true })).toHaveValue(qs[0]!);
   await page.waitForTimeout(800);
   await shot(page, "adm-03-wizard");
   await ctx.close();

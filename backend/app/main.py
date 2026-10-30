@@ -57,7 +57,7 @@ def create_app(settings: Settings | None = None, engines: Engines | None = None,
         await engine.dispose()
 
     app = FastAPI(
-        title="AI Interview Platform API", version="0.1.0", lifespan=lifespan,
+        title="AuraEval AI API", version="0.1.0", lifespan=lifespan,
         docs_url=None if settings.is_prod else "/docs", redoc_url=None,
     )
     app.state.settings = settings

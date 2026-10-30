@@ -39,7 +39,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   const sidebar = (
     <nav aria-label="관리자 메뉴" className="flex h-full flex-col">
-      <Link href="/admin" className="flex h-16 items-center px-5 text-lg font-extrabold tracking-tight text-primary">AI Interview</Link>
+      <Link href="/admin" aria-label="AuraEval AI" className="flex h-16 items-center px-4"><img src="/logo-header.svg" alt="AuraEval AI" width={191} height={40} className="h-10 w-auto" /></Link>
       <ul className="flex-1 space-y-1 px-3 py-2">
         {NAV.map(({ href, label, Icon }) => {
           const active = isActive(pathname, href);

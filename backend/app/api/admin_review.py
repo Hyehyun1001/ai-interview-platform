@@ -93,9 +93,9 @@ async def add_note(application_id: uuid.UUID, body: NoteIn, request: Request, us
 
 SUBJECTS = {"pass": "[{job}] 면접 결과 안내 - 합격", "fail": "[{job}] 면접 결과 안내", "schedule": "[{job}] 다음 전형 일정 안내"}
 BODIES = {
-    "pass": "{name}님, 안녕하세요.\n{job} 전형에 합격하셨음을 알려 드립니다. 이후 절차는 담당자가 별도로 안내드리겠습니다.\n지원해 주셔서 감사합니다.",
-    "fail": "{name}님, 안녕하세요.\n{job} 전형에 지원해 주셔서 감사합니다. 신중히 검토한 결과 이번에는 함께하지 못하게 되었음을 알려 드립니다.\n앞날을 응원합니다.",
-    "schedule": "{name}님, 안녕하세요.\n{job} 다음 전형 일정을 조율하고자 합니다. 아래 링크에서 가능한 일정을 선택해 주세요.\n{link}",
+    "pass": "{name}님, 안녕하세요.\n{job} 전형에 합격하셨음을 알려 드립니다. 이후 절차는 담당자가 별도로 안내드리겠습니다.\n지원해 주셔서 감사합니다.\n\n- AuraEval AI",
+    "fail": "{name}님, 안녕하세요.\n{job} 전형에 지원해 주셔서 감사합니다. 신중히 검토한 결과 이번에는 함께하지 못하게 되었음을 알려 드립니다.\n앞날을 응원합니다.\n\n- AuraEval AI",
+    "schedule": "{name}님, 안녕하세요.\n{job} 다음 전형 일정을 조율하고자 합니다. 아래 링크에서 가능한 일정을 선택해 주세요.\n{link}\n\n- AuraEval AI",
 }
 
 

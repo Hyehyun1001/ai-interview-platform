@@ -2,7 +2,7 @@
   "name": "ai-interview-frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "기업용 온프레미스 AI 모의면접 플랫폼 프론트엔드 (docs/UI_SPEC.md)",
+  "description": "AuraEval AI(격리형 엔터프라이즈 AI 채용 솔루션) 프론트엔드 (docs/UI_SPEC.md)",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",

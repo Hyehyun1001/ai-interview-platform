@@ -1,6 +1,6 @@
 <div align="center">
 
-# AI Interview Platform
+# AuraEval AI
 
 **외부 SaaS 호출 없이 한 대의 Mac에서 돌아가는 온프레미스 B2B AI 모의면접 플랫폼**
 

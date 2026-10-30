@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { Providers } from "./providers";
 
-export const metadata: Metadata = { title: { default: "AI Interview", template: "%s · AI Interview" }, description: "기업용 온프레미스 AI 모의면접 플랫폼" };
+export const metadata: Metadata = { title: { default: "AuraEval AI", template: "%s · AuraEval AI" }, description: "격리형 엔터프라이즈 AI 채용 솔루션" };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

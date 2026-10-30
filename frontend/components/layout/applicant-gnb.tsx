@@ -12,9 +12,9 @@ const NAV = [{ href: "/jobs", label: "공고" }];
 export function ApplicantGnb() {
   const pathname = usePathname();
   return (
-    <header className="sticky top-0 z-30 border-b border-border bg-surface">
+    <header className="sticky top-0 z-30 border-b border-border bg-surface shadow-[inset_0_-2px_0_0_var(--color-accent)]">
       <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-6 px-4">
-        <Link href="/jobs" className="text-lg font-extrabold tracking-tight text-primary">AI Interview</Link>
+        <Link href="/jobs" aria-label="AuraEval AI" className="flex items-center"><img src="/logo-header.svg" alt="AuraEval AI" width={191} height={40} className="h-10 w-auto" /></Link>
         <nav aria-label="주 메뉴" className="flex items-center gap-1">
           {NAV.map((n) => {
             const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
