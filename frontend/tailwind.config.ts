@@ -7,7 +7,7 @@ const config: Config = {
     extend: {
       colors: {
         bg: "var(--color-bg)", surface: "var(--color-surface)", "surface-2": "var(--color-surface-2)", border: "var(--color-border)",
-        text: "var(--color-text)", muted: "var(--color-muted)", primary: "var(--color-primary)", "primary-fg": "var(--color-primary-fg)",
+        text: "var(--color-text)", muted: "var(--color-muted)", primary: "var(--color-primary)", accent: "var(--color-accent)", "accent-2": "var(--color-accent-2)", "brand-navy": "var(--color-brand-navy)", "primary-fg": "var(--color-primary-fg)",
         success: "var(--color-success)", warning: "var(--color-warning)", danger: "var(--color-danger)", info: "var(--color-info)",
         "success-bg": "var(--color-success-bg)", "warning-bg": "var(--color-warning-bg)", "danger-bg": "var(--color-danger-bg)",
         "info-bg": "var(--color-info-bg)",

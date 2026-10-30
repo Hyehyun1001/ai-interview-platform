@@ -2,24 +2,27 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 디자인 토큰 (UI_SPEC §3.3, A-4) — MVP 는 라이트 테마만. 실제 색·타이포 값은 디자인 시안 확정 후 이 파일만 바꾼다. */
+/* 디자인 토큰 (UI_SPEC §3.3, A-4) — MVP 는 라이트 테마만. AuraEval AI 로고 팔레트: 네이비 #0F172A · 틸 #14B8A6 · 스카이 #38BDF8 (primary 는 흰 글자 대비를 위해 한 단계 진한 틸). 실제 색·타이포 값은 디자인 시안 확정 후 이 파일만 바꾼다. */
 :root {
-  --color-bg: #f6f7f9;
+  --color-bg: #f8fafc;
   --color-surface: #ffffff;
-  --color-surface-2: #f0f2f5;
-  --color-border: #e1e5ea;
-  --color-text: #1b2430;
-  --color-muted: #667085;
-  --color-primary: #2557d6;
+  --color-surface-2: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-muted: #64748b;
+  --color-primary: #0f766e;
   --color-primary-fg: #ffffff;
-  --color-success: #12805c;
-  --color-warning: #b25e09;
-  --color-danger: #c4262e;
-  --color-info: #1d6fa5;
-  --color-success-bg: #e6f6ef;
-  --color-warning-bg: #fdf1dc;
-  --color-danger-bg: #fdebec;
-  --color-info-bg: #e5f2fa;
+  --color-success: #15803d;
+  --color-warning: #b45309;
+  --color-danger: #be123c;
+  --color-info: #0369a1;
+  --color-success-bg: #e8f7ee;
+  --color-warning-bg: #fef3dc;
+  --color-danger-bg: #fde8ec;
+  --color-info-bg: #e0f2fe;
+  --color-accent: #14b8a6;
+  --color-accent-2: #38bdf8;
+  --color-brand-navy: #0f172a;
   --radius: 8px;
   --radius-lg: 14px;
 }

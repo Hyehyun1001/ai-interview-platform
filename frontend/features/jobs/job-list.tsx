@@ -1,5 +1,5 @@
 "use client";
-import { Search } from "lucide-react";
+import { Mic, Search, ShieldCheck, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -18,7 +18,7 @@ export function DDayBadge({ deadline }: { deadline: string | null | undefined })
 function JobCard({ job, applied }: { job: JobSummary; applied: boolean }) {
   return (
     <Link href={`/jobs/${job.id}`} data-testid="job-card" className="block rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-      <Card className="h-full space-y-2 p-4 transition hover:border-primary">
+      <Card className="h-full space-y-3 p-5 transition duration-200 hover:-translate-y-0.5 hover:border-accent hover:shadow-md">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             {job.job_category && <Badge tone="info">{job.job_category}</Badge>}
@@ -26,11 +26,14 @@ function JobCard({ job, applied }: { job: JobSummary; applied: boolean }) {
           </div>
           <DDayBadge deadline={job.deadline_at} />
         </div>
-        <h2 className="text-base font-bold">{job.title}</h2>
-        <p className="text-sm text-muted">
-          {job.company_name}{job.headcount ? ` · 정원 ${job.headcount}명` : ""}
-        </p>
-        <p className="text-sm text-muted">{formatDeadline(job.deadline_at)}</p>
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-navy text-sm font-bold text-accent">{job.company_name.slice(0, 1)}</span>
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-bold">{job.title}</h2>
+            <p className="truncate text-sm text-muted">{job.company_name}{job.headcount ? ` · ${job.headcount}명 채용` : ""}</p>
+          </div>
+        </div>
+        <p className="border-t border-border pt-3 text-xs text-muted">{formatDeadline(job.deadline_at)}</p>
         {applied && <Badge tone="success">지원 완료 ✓</Badge>}
       </Card>
     </Link>
@@ -52,17 +55,40 @@ export function JobList() {
   const hasFilter = !!query.category || !!query.q;
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-bold">채용 공고</h1>
-      <form role="search" className="flex gap-2" onSubmit={(e) => { e.preventDefault(); go({ q: text, page: 1 }); }}>
-        <label className="sr-only" htmlFor="job-q">공고 검색</label>
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
-          <input id="job-q" value={text} onChange={(e) => setText(e.target.value)} maxLength={100} placeholder="직무·키워드 검색"
-            className="h-10 w-full rounded border border-border bg-surface pl-9 pr-3 text-sm" />
+    <div className="space-y-6">
+      <section className="relative overflow-hidden rounded-2xl bg-brand-navy px-6 py-10 text-white sm:px-10 sm:py-14">
+        <div aria-hidden className="pointer-events-none absolute -right-20 -top-24 h-80 w-80 rounded-full" style={{ background: "radial-gradient(closest-side, rgba(20,184,166,0.35), transparent)" }} />
+        <div aria-hidden className="pointer-events-none absolute -bottom-28 right-32 h-72 w-72 rounded-full" style={{ background: "radial-gradient(closest-side, rgba(56,189,248,0.25), transparent)" }} />
+        <div className="relative max-w-2xl">
+          <p className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-accent"><Sparkles className="h-3.5 w-3.5" aria-hidden />AI 음성 면접</p>
+          <h1 className="text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">말하는 만큼, 정확하게 평가받는<br />새로운 면접</h1>
+          <p className="mt-3 text-sm leading-relaxed text-slate-300 sm:text-base">면접관 앞에서 긴장하지 않아도 괜찮아요. 내 이력서에서 출발한 질문에 편하게 답하면, 근거가 담긴 결과로 돌아옵니다.</p>
+          <form role="search" className="mt-7 flex gap-2" onSubmit={(e) => { e.preventDefault(); go({ q: text, page: 1 }); }}>
+            <label className="sr-only" htmlFor="job-q">공고 검색</label>
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
+              <input id="job-q" value={text} onChange={(e) => setText(e.target.value)} maxLength={100} placeholder="직무나 키워드로 공고를 찾아보세요"
+                className="h-12 w-full rounded-lg border border-transparent bg-white pl-11 pr-3 text-sm text-text shadow-lg placeholder:text-muted" />
+            </div>
+            <button type="submit" className="h-12 rounded-lg bg-accent px-6 text-sm font-bold text-brand-navy shadow-lg transition hover:brightness-110">검색</button>
+          </form>
         </div>
-        <Button type="submit" variant="secondary">검색</Button>
-      </form>
+      </section>
+
+      <ul className="grid gap-3 sm:grid-cols-3" aria-label="서비스 특징">
+        {[
+          { Icon: Mic, title: "말로 편하게 답변", desc: "타이핑 없이 음성으로, 내 속도에 맞춰 진행돼요." },
+          { Icon: Sparkles, title: "이력서 기반 맞춤 질문", desc: "경험에서 출발해 꼬리질문까지 자연스럽게 이어져요." },
+          { Icon: ShieldCheck, title: "안심하고 맡기는 내 데이터", desc: "음성과 이력서는 기업 서버 안에서만 보관돼요." },
+        ].map(({ Icon, title, desc }) => (
+          <li key={title} className="flex items-start gap-3 rounded-lg border border-border bg-surface p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-primary" style={{ backgroundColor: "color-mix(in srgb, var(--color-accent) 15%, white)" }}><Icon className="h-5 w-5" aria-hidden /></span>
+            <div><p className="text-sm font-bold">{title}</p><p className="mt-0.5 text-xs leading-relaxed text-muted">{desc}</p></div>
+          </li>
+        ))}
+      </ul>
+
+      <h2 className="pt-2 text-xl font-bold">지금 모집 중인 공고</h2>
 
       <div role="group" aria-label="직무 카테고리" className="flex flex-wrap gap-2">
         {[null, ...CATEGORIES].map((c) => {
