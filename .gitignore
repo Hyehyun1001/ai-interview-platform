@@ -95,3 +95,6 @@ chroma_db/
 *.tmp
 *.bak
 *.swp
+# 개인 학습용 문서 (저장소에 올리지 않음)
+docs/PROJECT_GUIDE.md
+PROJECT_GUIDE.md
