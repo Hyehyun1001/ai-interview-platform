@@ -9,6 +9,31 @@ const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT
 
 test.describe.configure({ mode: "serial" });
 
+test("README 아키텍처 흐름도(로고)", async ({ browser }) => {
+  const page = await browser.newPage({ viewport: { width: 1600, height: 600 }, deviceScaleFactor: 1.5 });
+  await page.goto("file://" + path.join(__dirname, "../../../docs/assets/architecture/architecture-flow.html"));
+  await page.screenshot({ path: path.join(OUT, "../architecture-flow.png"), fullPage: true });
+  await page.close();
+});
+
+test("README 시스템 아키텍처 그림", async ({ browser }) => {
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 }, deviceScaleFactor: 1.5 });
+  await page.goto("file://" + path.join(__dirname, "../../../docs/assets/architecture/architecture.html"));
+  await page.screenshot({ path: path.join(OUT, "../architecture.png"), fullPage: true });
+  await page.close();
+});
+
+test("공고 목록(비로그인 첫 화면): APP-02", async ({ browser }) => {
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, locale: "ko-KR" });
+  const page = await ctx.newPage();
+  await page.goto("/jobs");
+  await expect(page.getByTestId("job-card").first()).toBeVisible();
+  await page.mouse.move(1400, 20);
+  await page.waitForTimeout(600);
+  await shot(page, "app-02-jobs");
+  await ctx.close();
+});
+
 test("지원자 화면 4장: APP-03/05/06/07", async ({ browser }) => {
   const ctx = await browser.newContext({ permissions: ["camera", "microphone"], viewport: { width: 1440, height: 900 }, locale: "ko-KR" });
   const page = await ctx.newPage();

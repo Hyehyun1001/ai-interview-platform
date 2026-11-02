@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<!-- README 시스템 아키텍처 그림 소스. 재생성: cd frontend && npx playwright test -c playwright.capture.config.ts -g "아키텍처" -->
+<style>
+:root{--ink:#0f172a;--mut:#64748b;--line:#cbd5e1;--teal:#0f766e;--teal-l:#ccfbf1;--teal-bg:#f0fdfa;--navy:#111827;--blue:#1d4ed8;--blue-bg:#eff6ff;--amb:#b45309;--amb-bg:#fffbeb;--vio:#6d28d9;--vio-bg:#f5f3ff}
+*{box-sizing:border-box;margin:0}
+body{width:1600px;background:#fff;font-family:"Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif;color:var(--ink);padding:40px 48px 44px}
+h1{font-size:26px;font-weight:800}
+.sub{color:var(--mut);font-size:15px;margin:6px 0 26px}
+.layer{border:1.5px solid var(--line);border-radius:18px;padding:16px 20px 20px;position:relative;background:#fff}
+.layer>.tag{position:absolute;top:-13px;left:22px;background:#fff;padding:0 10px;font-size:14px;font-weight:700;color:var(--mut);letter-spacing:.2px}
+.row{display:grid;gap:14px}
+.c4{grid-template-columns:repeat(4,1fr)}.c3{grid-template-columns:repeat(3,1fr)}
+.card{border-radius:12px;padding:13px 16px;border:1.5px solid;min-height:84px}
+.card b{display:block;font-size:16.5px;margin-bottom:5px}
+.card span{font-size:13.5px;line-height:1.5;color:#334155;display:block}
+.fe{background:var(--blue-bg);border-color:#bfdbfe}.fe b{color:var(--blue)}
+.core{background:var(--teal-bg);border-color:#99f6e4}.core b{color:var(--teal)}
+.ai{background:var(--vio-bg);border-color:#ddd6fe}.ai b{color:var(--vio)}
+.data{background:var(--amb-bg);border-color:#fde68a}.data b{color:var(--amb)}
+.sublabel{font-size:13px;font-weight:700;color:var(--mut);margin:14px 0 8px}
+.sublabel:first-of-type{margin-top:2px}
+.link{display:flex;justify-content:center;gap:26px;align-items:center;height:62px}
+.pill{display:flex;align-items:center;gap:8px;font-size:13.5px;color:#334155;background:#f8fafc;border:1.5px solid var(--line);border-radius:999px;padding:7px 16px}
+.pill i{font-style:normal;color:var(--teal);font-weight:800;font-size:17px}
+.pill em{font-style:normal;font-weight:700;color:var(--ink)}
+.badge{display:inline-block;background:var(--navy);color:#5eead4;font-size:13px;font-weight:700;border-radius:999px;padding:5px 14px;margin-left:12px;vertical-align:middle}
+.flow{margin-top:34px}
+.flow h2{font-size:19px;font-weight:800;margin-bottom:4px}
+.flow .sub{margin:0 0 16px;font-size:14px}
+.steps{display:grid;grid-template-columns:repeat(6,1fr);gap:0;align-items:stretch}
+.step{background:#f8fafc;border:1.5px solid var(--line);border-radius:14px;padding:14px 14px 14px;position:relative;margin-right:22px}
+.step:last-child{margin-right:0}
+.step:not(:last-child):after{content:"›";position:absolute;right:-19px;top:50%;transform:translateY(-50%);font-size:30px;color:var(--teal);font-weight:800}
+.step .n{width:26px;height:26px;border-radius:50%;background:var(--teal);color:#fff;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;margin-bottom:9px}
+.step b{display:block;font-size:15px;margin-bottom:5px}
+.step span{font-size:12.8px;line-height:1.5;color:#475569;display:block}
+.note{margin-top:14px;font-size:13px;color:var(--mut);line-height:1.6}
+</style></head>
+<body>
+<div id="arch">
+<h1>AuraEval AI 시스템 아키텍처<span class="badge">ON-PREMISE · 외부 API 호출 0</span></h1>
+<p class="sub">Mac M2 Pro (16GB) 한 대 안에서 브라우저, 백엔드, AI 모델, 데이터 저장소가 모두 동작합니다. 면접 데이터는 내부망 밖으로 나가지 않습니다.</p>
+
+<div class="layer"><div class="tag">CLIENT · 브라우저 (지원자 / 채용 담당자)</div>
+ <div class="row c4">
+  <div class="card fe"><b>Next.js 14 UI</b><span>App Router · TypeScript<br>TanStack Query · Zustand · Recharts</span></div>
+  <div class="card fe"><b>시선 이탈 감지</b><span>MediaPipe Face Landmarker (WASM)<br>브라우저 안에서 판정, 이벤트만 전송</span></div>
+  <div class="card fe"><b>음성·영상 녹화</b><span>마이크 PCM 16kHz 스트리밍<br>영상 webm 청크 업로드</span></div>
+  <div class="card fe"><b>코딩테스트 에디터</b><span>Monaco Editor (로컬 서빙)<br>코드 제출·실행 결과 확인</span></div>
+ </div>
+</div>
+
+<div class="link">
+ <div class="pill"><i>⇅</i><em>REST</em> 공고·이력서·리포트·관리자 API</div>
+ <div class="pill"><i>⇅</i><em>WS control</em> 질문·자막·타이머·시선 이벤트</div>
+ <div class="pill"><i>⇡</i><em>WS media</em> 음성·영상 청크</div>
+</div>
+
+<div class="layer"><div class="tag">SERVER · 단일 호스트 (내부망)</div>
+ <div class="sublabel">애플리케이션 (FastAPI · 단일 프로세스)</div>
+ <div class="row c4">
+  <div class="card core"><b>API 게이트웨이</b><span>REST + WebSocket<br>JWT 인증 · 역할 기반 접근 제어</span></div>
+  <div class="card core"><b>면접 세션 런타임</b><span>상태머신 · 꼬리질문 횟수 관리<br>끊김 복구 · 동시 세션 1개 제한</span></div>
+  <div class="card core"><b>Guardrail</b><span>스키마·근거·길이 검증 후 재시도<br>통과한 질문만 음성으로 재생</span></div>
+  <div class="card core"><b>리포트 워커</b><span>면접 종료 후 평가 리포트 생성<br>면접 중에는 일시 중지</span></div>
+ </div>
+ <div class="sublabel">AI 엔진 (모두 로컬 실행)</div>
+ <div class="row c4">
+  <div class="card ai"><b>LLM · Ollama</b><span>Qwen2.5-7B (Q4_K_M)<br>질문 생성 · 답변 평가</span></div>
+  <div class="card ai"><b>음성 인식 · STT</b><span>faster-whisper large-v3-turbo<br>CPU int8 · 증분 디코딩</span></div>
+  <div class="card ai"><b>음성 합성 · TTS</b><span>macOS 내장 음성 (say)<br>질문 필드 완성 즉시 재생</span></div>
+  <div class="card ai"><b>이력서 검색 · RAG</b><span>PDF 파싱 → BAAI/bge-m3 임베딩<br>ChromaDB (임베디드)</span></div>
+ </div>
+ <div class="sublabel">데이터 · 실행 환경</div>
+ <div class="row c3">
+  <div class="card data"><b>관계형 DB</b><span>PostgreSQL 16 (운영) / SQLite (개발·테스트)<br>SQLAlchemy 2.0 + Alembic 마이그레이션</span></div>
+  <div class="card data"><b>로컬 파일 저장소</b><span>면접 음성·영상, 이력서 PDF<br>호스트 디스크에만 보관</span></div>
+  <div class="card data"><b>코딩테스트 샌드박스</b><span>Docker 컨테이너 (Python · Node · Java)<br>네트워크 차단, 자원 제한</span></div>
+ </div>
+</div>
+</div>
+
+<div class="flow" id="flow">
+<h2>면접 한 턴의 처리 흐름</h2>
+<p class="sub">답변이 끝나고 다음 질문이 들리기까지, 기다리는 시간을 줄이기 위해 두 가지를 겹쳐서 처리합니다.</p>
+<div class="steps">
+ <div class="step"><div class="n">1</div><b>답변 수집</b><span>말하는 동안 끝난 구간을 백그라운드에서 미리 받아 적고, 답변 종료 시 마지막 구간만 처리합니다 (증분 STT)</span></div>
+ <div class="step"><div class="n">2</div><b>이력서 근거 검색</b><span>답변과 관련된 이력서 문장을 ChromaDB에서 찾아 질문의 근거로 씁니다</span></div>
+ <div class="step"><div class="n">3</div><b>꼬리질문 생성</b><span>LLM이 JSON을 스트리밍으로 생성합니다. 근거 키워드 다음에 질문이 오도록 키 순서를 고정합니다</span></div>
+ <div class="step"><div class="n">4</div><b>Guardrail 검증</b><span>근거 키워드 실존, 인적 속성 질문 금지, 중복·길이를 음성 재생 전에 검사합니다. 실패하면 재시도합니다</span></div>
+ <div class="step"><div class="n">5</div><b>즉시 음성 재생</b><span>question 필드가 닫히는 순간 TTS를 시작합니다. 나머지 JSON 생성은 뒤에서 계속됩니다</span></div>
+ <div class="step"><div class="n">6</div><b>저장·다음 턴</b><span>문답, 시선 이벤트, 음성 타임라인을 DB에 저장하고 다음 답변을 기다립니다</span></div>
+</div>
+</div>
+</body></html>

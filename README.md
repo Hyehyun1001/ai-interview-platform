@@ -11,13 +11,17 @@
 ![Ollama](https://img.shields.io/badge/Ollama-Qwen2.5--7B-000000?logo=ollama&logoColor=white)
 ![Faster-Whisper](https://img.shields.io/badge/Faster--Whisper-large--v3--turbo-FF6F00)
 
+<br>
+
+<img src="docs/assets/screenshots/app-02-jobs.png" alt="AuraEval AI 공고 목록 화면" width="860">
+
 </div>
 
 ---
 
 ## 목차
 
-1. [개요](#1-개요-overview) · 2. [주요 기능](#2-주요-기능-key-features) · 3. [화면](#3-주요-화면-screenshots) · 4. [아키텍처](#4-시스템-아키텍처--테크-스택) · 5. [빠른 시작](#5-빠른-시작-quick-start) · 6. [테스트와 성능](#6-테스트-및-검증-결과-testing--performance) · 7. [보안](#7-보안-security)
+1. [개요](#1-개요-overview) · 2. [주요 기능](#2-주요-기능-key-features) · 3. [화면](#3-주요-화면-screenshots) · 4. [아키텍처](#4-시스템-아키텍처--테크-스택) · 5. [빠른 시작](#5-빠른-시작-quick-start) · 6. [성능](#6-성능-performance) · 7. [보안](#7-보안-security) · 8. [알려진 한계](#8-알려진-한계--로드맵-known-limitations)
 
 ## 1. 개요 (Overview)
 
@@ -50,9 +54,9 @@
 
 | 화면 | 이미지 |
 |---|---|
+| **[지원자] APP-02** 공고 목록 (첫 화면) | ![APP-02](docs/assets/screenshots/app-02-jobs.png) |
 | **[지원자] APP-03** 공고 상세 및 보안 동의 모달 | ![APP-03](docs/assets/screenshots/app-03-job-detail.png) |
 | **[지원자] APP-05** 이력서 PDF 업로드 및 분석 | ![APP-05](docs/assets/screenshots/app-05-resume.png) |
-| **[지원자] APP-06** 사전 환경 점검 및 가이드 | ![APP-06](docs/assets/screenshots/app-06-device-check.png) |
 | **[지원자] APP-07** 실시간 AI 면접 | ![APP-07](docs/assets/screenshots/app-07-interview.png) |
 | **[관리자] ADM-01** 통합 대시보드 | ![ADM-01](docs/assets/screenshots/adm-01-dashboard.png) |
 | **[관리자] ADM-03** 공고 작성 마법사 & AI 질문 뱅크 | ![ADM-03](docs/assets/screenshots/adm-03-wizard.png) |
@@ -61,21 +65,7 @@
 
 ## 4. 시스템 아키텍처 & 테크 스택
 
-```
-┌──────────── Browser (Next.js 14) ───────────┐
-│ REST (TanStack Query) · WS control · WS media│
-│ MediaPipe(WASM) 시선 · Monaco(로컬)          │
-└───────────────┬─────────────────────────────┘
-                │
-┌───────────────▼─────────────── FastAPI ──────────────────────┐
-│ REST API · SessionRuntime · Guardrail · Report Worker        │
-├─────────────┬──────────────┬───────────────┬─────────────────┤
-│ Ollama      │ faster-whisper│ macOS TTS     │ ChromaDB(bge-m3)│
-│ Qwen2.5-7B  │ large-v3-turbo│ (say)         │ 이력서 검색     │
-└─────────────┴──────────────┴───────────────┴─────────────────┘
-        SQLAlchemy 2 + Alembic → PostgreSQL 16 (Prod) / SQLite (Dev·Test)
-        Docker 샌드박스(코딩테스트: python/node/java)
-```
+![시스템 아키텍처](docs/assets/architecture-flow.png)
 
 | 영역 | 기술 |
 |---|---|
@@ -83,6 +73,25 @@
 | Backend | FastAPI (Uvicorn), SQLAlchemy 2.0, Alembic, Pydantic v2, PyMuPDF(PDF는 별도 프로세스에서 파싱), ChromaDB + BAAI/bge-m3 |
 | AI | Ollama `qwen2.5:7b-instruct-q4_K_M`, faster-whisper `large-v3-turbo`(int8, CPU), macOS TTS |
 | Infra | Docker Compose(PostgreSQL 16만), SQLite(개발·테스트) |
+
+### 프로젝트 구조
+
+```text
+├── backend/                 FastAPI 백엔드
+│   ├── app/api/             REST · WebSocket 라우터 (인증·공고·세션·관리자·리포트)
+│   ├── app/ai/              LLM 체인 · Guardrail · STT · TTS · 이력서 RAG
+│   ├── app/interview/       면접 세션 런타임 · 증분 STT · WS 프로토콜
+│   ├── app/worker/          리포트 생성 워커 · 점수 계산
+│   ├── app/coding/          코딩테스트 문제 은행 · 채점
+│   ├── alembic/             DB 마이그레이션
+│   ├── sandbox/             코딩테스트 Docker 이미지
+│   └── tests/               pytest (가짜 엔진으로 모델 없이 실행)
+├── frontend/                Next.js 14 프론트엔드
+│   ├── app/                 App Router (applicant · admin · interview · public)
+│   ├── features/            화면 단위 기능 (jobs · resume · interview · coding · admin …)
+│   └── e2e/                 Playwright 시나리오
+└── docs/                    PRD · TRD · UI_SPEC, README 이미지
+```
 
 상세 설계: [`docs/PRD.md`](docs/PRD.md) · [`docs/TRD.md`](docs/TRD.md) · [`docs/UI_SPEC.md`](docs/UI_SPEC.md)
 
@@ -118,17 +127,9 @@ cd frontend && npm install && npm run dev   # http://localhost:3000
 - 코딩테스트 샌드박스: `backend/sandbox/build.sh` 후 `SANDBOX_ENABLED=true`
 - 모델 없이 UI만 보려면 가짜 엔진 스택: `backend/scripts/dev_fake_stack.py`
 
-## 6. 테스트 및 검증 결과 (Testing & Performance)
+## 6. 성능 (Performance)
 
-| 항목 | 결과 (최근 실행 기준) |
-|---|---|
-| 백엔드 pytest (SQLite) | **459 passed, 3 skipped** (Docker 이미지가 없으면 샌드박스 테스트는 스스로 skip) |
-| 백엔드 on PostgreSQL 16 | `TEST_DATABASE_URL=postgresql+asyncpg://… pytest` 로 같은 스위트를 PostgreSQL 16에서도 실행(테스트마다 임시 DB 생성 후 삭제) |
-| 프론트엔드 Vitest | **151 passed** |
-| Playwright E2E (가짜 카메라/마이크/엔진) | 55개 시나리오 (가짜 카메라/마이크/엔진 기반 지원자·관리자 전 여정) |
-| 변이 검사 | 가드레일·런타임·자동 저장 로직을 일부러 깨뜨려 테스트가 실패함을 확인 |
-
-### 성능 (로컬 실측, Mac M2 Pro 16GB)
+로컬 실측, Mac M2 Pro 16GB 기준입니다.
 
 | 지표 | 설계 목표 | 실측 (14회, 비공식) |
 |---|---|---|
@@ -145,3 +146,19 @@ cd frontend && npm install && npm run dev   # http://localhost:3000
 - **PII 보호:** 이력서 PDF는 텍스트 추출 후 **원본 파일을 즉시 삭제**하며, 어떤 등록본·스냅샷도 원본 PDF를 참조하지 않습니다. 로그에 PII·원본 오디오·원문 전사를 남기지 않습니다(NFR-S1/S2).
 - **프롬프트 안전:** 사용자 텍스트는 `<untrusted>` 로 감싸고 defang 처리. PDF 파싱은 별도 프로세스.
 - **인증:** JWT 기반 인증, 역할(지원자/담당자)별 접근 제어.
+
+## 8. 알려진 한계 & 로드맵 (Known Limitations)
+
+**아직 구현하지 않은 기능**
+- 비밀번호 재설정, 비밀번호 변경 시 기존 토큰 폐기
+- 공고별 코딩테스트 문제 직접 작성 (현재는 내장 문제 은행만 사용)
+- 마이페이지 캘린더 탭, 마감 D-1 알림·자동 일정
+
+**설계상 제약**
+- 동시 면접은 1건입니다. 16GB 메모리 안에서 LLM·STT를 함께 돌리기 위한 한계입니다.
+- 실시간 자막(`stt_partial`)은 CPU 환경에서 2초 주기를 보장하지 못해 참고용(best-effort)으로만 표시합니다.
+- 이력서 임베딩(`requirements-ai.txt`)을 설치하지 않으면 이력서 검색이 생략되고 공고·일반 질문으로 면접이 진행됩니다.
+
+**검증 대기**
+- E2E 지연 목표(p50 9.5s / p95 12s)는 아직 100회 측정(TRD V-3)으로 확정하지 않았습니다. 위 성능 표는 14회 비공식 측정입니다.
+- `mlx-whisper` 전환은 후속 최적화 후보입니다 (TRD §11 #25).
