@@ -2,7 +2,7 @@
 
 # AuraEval AI
 
-**외부 SaaS 호출 없이 한 대의 Mac에서 돌아가는 온프레미스 B2B AI 모의면접 플랫폼**
+**외부 SaaS 호출 없이 한 대의 Mac에서 돌아가는 온프레미스 B2B AI 면접 플랫폼**
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
