@@ -100,3 +100,5 @@ docs/PROJECT_GUIDE.md
 PROJECT_GUIDE.md
 
 CLAUDE.md
+# Claude Code 로컬 설정
+.claude/settings.local.json
