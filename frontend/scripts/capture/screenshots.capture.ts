@@ -1,10 +1,14 @@
 import { expect, test, type Page } from "@playwright/test";
+import fs from "node:fs";
 import path from "node:path";
 import { login } from "../../e2e/helpers";
+import { fillDemoJobs } from "./demo-jobs.mjs";
 
 /** README 화면 캡처(docs/assets/screenshots). 시드된 데모 데이터만 쓰며 실제 개인정보는 없다. */
 const OUT = path.join(__dirname, "../../../docs/assets/screenshots");
 const PDF = path.join(__dirname, "../../e2e/fixtures/resume-ko.pdf");
+/** 실시간 면접 화면용: 미리 모자이크 처리해 둔 얼굴 이미지(face-mosaic.png). 가짜 카메라 영상 위에 덮어, 실제 얼굴·원본 영상을 쓰지 않는다. */
+const FACE = "data:image/png;base64," + fs.readFileSync(path.join(__dirname, "face-mosaic.png")).toString("base64");
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`) });
 
 test.describe.configure({ mode: "serial" });
@@ -21,6 +25,12 @@ test("README 시스템 아키텍처 그림", async ({ browser }) => {
   await page.goto("file://" + path.join(__dirname, "../../../docs/assets/architecture/architecture.html"));
   await page.screenshot({ path: path.join(OUT, "../architecture.png"), fullPage: true });
   await page.close();
+});
+
+test("데모 공고 채우기", async ({ playwright, baseURL }) => {
+  const ctx = await playwright.request.newContext({ baseURL });
+  await fillDemoJobs(ctx);
+  await ctx.dispose();
 });
 
 test("공고 목록(비로그인 첫 화면): APP-02", async ({ browser }) => {
@@ -94,6 +104,13 @@ test("지원자 화면 4장: APP-03/05/06/07", async ({ browser }) => {
   await expect(countdown).toBeVisible({ timeout: 20_000 });
   await expect(countdown).toBeHidden({ timeout: 30_000 });   // 시작 카운트다운이 끝난 뒤
   await page.waitForTimeout(2500);
+  await page.getByTestId("webcam").evaluate((video, src) => {   // 웹캠 영상 위(시선 상태 라벨 아래)에 모자이크 얼굴을 덮는다
+    const img = document.createElement("img");
+    img.src = src; img.alt = ""; img.setAttribute("aria-hidden", "true");
+    img.className = "absolute inset-0 h-full w-full object-cover";
+    video.insertAdjacentElement("afterend", img);
+  }, FACE);
+  await page.waitForFunction(() => Array.from(document.images).every((i) => i.complete));
   await shot(page, "app-07-interview");
   await ctx.close();
 });
@@ -106,7 +123,7 @@ test("관리자 화면 4장: ADM-01/03/05/06", async ({ browser }) => {
 
   // ADM-01 대시보드
   await expect(page.getByText("다가오는 면접")).toBeVisible();
-  await expect(page.getByText("백엔드 개발자 (신입)").first()).toBeVisible();
+  await expect(page.getByRole("row", { name: /백엔드 개발자 \(신입\)/ }).first()).toBeVisible();
   await page.mouse.move(1000, 20);                                  // 차트 툴팁이 뜨지 않게
   await page.waitForTimeout(800);
   await shot(page, "adm-01-dashboard");
