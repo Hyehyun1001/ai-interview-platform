@@ -277,7 +277,7 @@ function Step2({ job, disabled, saving, onChange, run, onAuto, onNext, onPrev }:
           </li>))}</ol>
         <p className="text-xs text-muted">등록 {filled.length} / 10 · 빈칸은 면접 시 자동 생성돼요</p></section>
       <section className="space-y-2"><div className="flex items-center justify-between"><h2 className="font-semibold">AI 질문 뱅크 (JD 기반 후보)</h2>
-        <Button variant="secondary" loading={busy} disabled={disabled || busy} onClick={() => void run(async () => { await generateBank(job.id); void bank.refetch(); })}>✨ JD 기반 질문 추출</Button></div>
+        <Button variant="secondary" loading={busy} disabled={disabled || busy} onClick={() => void run(async () => { await generateBank(job.id); void bank.refetch(); })}>JD 기반 질문 추출</Button></div>
         <p role="status" className="text-sm text-muted" data-testid="bank-status">{bank.data ? ({ none: "아직 추출하지 않았어요", queued: "⏳ 추출 대기 중…", running: "⏳ 추출 중… (최대 1분)", done: `후보 ${bank.data.items.length}개`, failed: bank.data.message ?? "추출에 실패했어요" })[bank.data.status] : ""}</p>
         {bank.data?.items.length ? <><ul className="max-h-64 space-y-1 overflow-auto rounded border border-border p-2">{bank.data.items.map((i) => (
           <li key={i.id}><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={picked.has(i.id)} onChange={(e) => { const n = new Set(picked); if (e.target.checked) n.add(i.id); else n.delete(i.id); setPicked(n); }} />

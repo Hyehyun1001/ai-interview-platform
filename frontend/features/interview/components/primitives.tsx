@@ -1,6 +1,7 @@
 "use client";
 import { Mic, ShieldAlert, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { LevelMeter } from "@/components/ui/level-meter";
 import { cn, msToClock } from "@/lib/utils";
 import { GAZE_BANNER_MS, type InterviewState } from "../store";
 
@@ -24,7 +25,7 @@ export function InterviewProgressBar({ main, total, followupLabel, codingEnabled
 export function InterviewerPanel({ text, kind, speaking, captionOnly }: { text: string | null; kind?: string; speaking: boolean; captionOnly: boolean }) {
   return (
     <div className="flex h-full flex-col items-center gap-5 rounded-lg border border-border bg-surface p-6">
-      <div aria-hidden className={cn("flex h-24 w-24 items-center justify-center rounded-full bg-primary text-3xl text-primary-fg transition", speaking && "animate-pulse ring-8 ring-primary/20")}>◉</div>
+      <div aria-hidden className={cn("flex h-24 w-24 items-center justify-center rounded-full transition-colors duration-150", speaking ? "bg-primary text-primary-fg" : "bg-surface-2 text-muted")}><LevelMeter live={speaking} className="h-8 [&>span]:w-1" /></div>
       <div className="w-full flex-1">
         {kind && kind !== "main" && <span className="mb-2 inline-block rounded-full bg-info-bg px-2 py-0.5 text-xs font-semibold text-info">{kind === "followup" ? "꼬리질문" : "코드 질문"}</span>}
         {/* 자막은 TTS 와 무관하게 질문 도착 즉시 보인다 — TTS 가 실패해도 질문이 전달된다 (청각 접근성) */}
@@ -95,7 +96,7 @@ export function AnswerTimer({ remainingMs, totalSec }: { remainingMs: number | n
           <circle cx="60" cy="60" r={r} fill="none" strokeWidth="8" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - frac)}
             className={cn("transition-[stroke-dashoffset] duration-300", warn ? "stroke-danger" : "stroke-primary")} />
         </svg>
-        <span className={cn("absolute inset-0 flex items-center justify-center text-2xl font-bold tabular-nums", warn && "animate-pulse text-danger", !active && "text-muted")} data-testid="timer-value">
+        <span className={cn("absolute inset-0 flex items-center justify-center text-2xl font-semibold tabular-nums", warn && "animate-pulse text-danger", !active && "text-muted")} data-testid="timer-value">
           {msToClock(sec * 1000)}
         </span>
       </div>
