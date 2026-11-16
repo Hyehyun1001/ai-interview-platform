@@ -4,18 +4,18 @@
 - Platform: Local On-Premise B2B AI Mock Interview Platform
 - Target Machine: Mac M2 Pro / 16GB Unified Memory / macOS
 - Constraints: 
-  - ZERO external SaaS API calls in production logic (Data isolation)[cite: 3, 4].
+  - ZERO external SaaS API calls in production logic (Data isolation).
   - Peak Memory footprint MUST stay under 14.5GB (OS + Browser + Ollama + STT + Web).
   - Max Concurrent Interview Session = 1 (`MAX_CONCURRENT_SESSIONS=1`).
 
 ## Source of Truth (Reference Documents)
 Before implementing any feature, ALWAYS consult the corresponding spec file in `docs/`:
-- **PRD (What/Why):** `docs/PRD.md` (Product Requirements, Personas, Workflows)[cite: 3]
+- **PRD (What/Why):** `docs/PRD.md` (Product Requirements, Personas, Workflows)
 - **TRD (How/Tech):** `docs/TRD.md` (Architecture, DB Schema, APIs, Memory Specs)
 - **UI Spec (Frontend):** `docs/UI_SPEC.md` (Next.js App Router, Components, WS Events)
 
 ## Tech Stack
-- Frontend: Next.js 14 (App Router, TS), Tailwind CSS, TanStack Query v5, Zustand, Recharts[cite: 4, 5]
+- Frontend: Next.js 14 (App Router, TS), Tailwind CSS, TanStack Query v5, Zustand, Recharts
 - Backend: Python 3.11+, FastAPI (Uvicorn), SQLAlchemy 2.0 (Alembic), Pydantic v2
 - AI Pipelines: Ollama (Qwen2.5-7B Q4_K_M), faster-whisper (CPU int8), ChromaDB (Embedded), MediaPipe (WASM)
 - DB: SQLite (Dev) / PostgreSQL 16 (Prod)
@@ -38,7 +38,7 @@ Before implementing any feature, ALWAYS consult the corresponding spec file in `
 - **Tests:** `cd backend && .venv/bin/python -m pytest` (no models needed; fakes in `tests/fakes.py`). When changing guardrail/runtime logic, check tests still FAIL when the logic is broken (mutation check) — a green suite alone is not evidence.
 
 ## Universal Coding Rules
-1. **No Spec Deviation:** Never invent new API endpoints or DB columns without checking `TRD.md` and `UI_SPEC.md` first[cite: 4, 5].
+1. **No Spec Deviation:** Never invent new API endpoints or DB columns without checking `TRD.md` and `UI_SPEC.md` first.
 2. **Type Safety & Guardrails:**
    - Backend: All LLM outputs MUST go through Pydantic parser & Guardrail validation (`ai/guardrail.py`).
    - Frontend: All API calls MUST use types generated from Backend OpenAPI (`types/api.ts`).
